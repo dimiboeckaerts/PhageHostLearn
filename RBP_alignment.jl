@@ -11,6 +11,7 @@ identity percentages is computed.
 
 # IMPORT LIBRARIES
 # --------------------------------------------------
+using Pkg
 # import Pkg
 # Pkg.add("BioSequences")
 # Pkg.add("BioAlignments")
@@ -104,7 +105,7 @@ aln = alignment(res)
 sc = score(res)
 count_matches(aln)
 
-smallfile = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/proFiberBase_mini.csv"
+smallfile = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBPbase_mini.csv"
 f = file_to_array(smallfile, cut="")
 m = compute_pw_matrix(smallfile, cutoff="C")
 
@@ -115,7 +116,7 @@ end
 
 # COMPUTE FULL MATRIX
 # --------------------------------------------------
-RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/proFiberBase_230221.csv"
+RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBPbase_230421.csv"
 m = compute_pw_matrix(RBPdf, cutoff="")
 size(m)
 writedlm("/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBP_alignmentmatrix.txt", m)
@@ -124,13 +125,13 @@ matrix = readdlm("/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBP_align
 
 # COMPUTE N/C-TERMINAL CUTOFFS
 # --------------------------------------------------
-RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/proFiberBase_230221.csv"
+RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBPbase_230421.csv"
 mN = compute_pw_matrix(RBPdf, cutoff="N")
 size(mN)
 writedlm("/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBP_alignmentmatrix_Nterm.txt", mN)
 matrix = readdlm("/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBP_alignmentmatrix_Nterm.txt")
 
-RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/proFiberBase_230221.csv"
+RBPdf = "/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBPbase_230421.csv"
 mC = compute_pw_matrix(RBPdf, cutoff="C")
 size(mC)
 writedlm("/Users/Dimi/GoogleDrive/PhD/4_WP2_PWLEARNING/42_DATA/RBP_alignmentmatrix_Cterm.txt", mC)
