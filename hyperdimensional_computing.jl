@@ -186,3 +186,23 @@ sequences = ["GGTCTGGGATC", "AATCGGATC", "AAGGCTCTA", "AACGCATTGG", "AATCGAATCA"
 
  # test 4
  preds = make_predictions(encos, class_enco)
+
+
+ # make this into a package
+ using PkgTemplates
+t = Template(;
+        user="dimiboeckaerts",
+        dir="/Users/Dimi/Documents/GitHub_Local",
+        authors="Steff Taelman, Dimi Boeckaerts",
+        julia=v"1.5",
+        plugins=[
+            License(; name="MIT"),
+            Git(; manifest=true),
+            GitHubActions(; x86=true),
+            Codecov(),
+            Documenter{GitHubActions}(),
+            Develop(),
+        ],
+    )
+
+t("HyperdimensionalComputing")
