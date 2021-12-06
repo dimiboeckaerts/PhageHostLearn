@@ -8,14 +8,15 @@ PROCESSING UTILS FOR THE RBP-R PREDICTION FRAMEWORK
 
 # 0 - LIBRARIES
 # --------------------------------------------------
-import subprocess
-from tqdm import tqdm
 import os
+import json
 import math
+import subprocess
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from Bio import SeqIO
 from Bio.Seq import Seq
-import subprocess
 from Bio.SearchIO import HmmerIO
 
 
@@ -411,3 +412,313 @@ def domain_RBP_predictor(path, pfam_file, sequences, structural=[], binding=[], 
             predictions_dict['archived_domains'].append(archive_detected)
     
     return predictions_dict
+
+
+def cdhit_python(cdhit_path, input_file, output_file, c=0.50, n=3):
+    """
+    This function executes CD-HIT clustering commands from within Python. To install
+    CD-HIT, do so via conda: conda install -c bioconda cd-hit. By default, CD-HIT
+    works via a global alignment approach, which is good for our application as
+    we cut the sequences to 'one unknown domain' beforehand.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - input_file: FASTA file with protein sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+        - n: word length (3 for thresholds between 0.5 and 0.6)
+    """
+    
+    cd_str = 'cd ' + cdhit_path # change directory
+    raw_str = './cd-hit -i ' + input_file + ' -o ' + output_file + ' -c ' + str(c) + ' -n ' + str(n) + ' -d 0'
+    command = cd_str+'; '+ raw_str
+    #cd_process = subprocess.Popen(cd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    #cd_out, cd_err = cd_process.communicate()
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    return stdout, stderr
+
+
+def RBPbase_species_filter(rbp_data, data_dir, results_dir, species):
+    """
+    This function creates a subset of RBPbase for a specific host species for further processing.
+
+    Input:
+    - rbp_data: name of the RBP database (string)
+    - data_dir: location of the database and where the fasta files will be stored (string)
+    - species: the single species to create a subset for
+
+    Output:
+    - subset RBPbase
+    """
+    if data_dir != '':
+        data_dir = data_dir+'/'
+    if results_dir != '':
+        results_dir = results_dir+'/'
+    RBPbase = pd.read_csv(data_dir+rbp_data)
+    to_delete = []
+    for i, host in enumerate(RBPbase['host']):
+        if host != species:
+            to_delete.append(i)
+        elif len(RBPbase['protein_seq'][i]) < 250:
+            to_delete.append(i)
+        elif len(RBPbase['protein_seq'][i]) > 1500:
+            to_delete.append(i)
+    RBPbase = RBPbase.drop(to_delete, axis=0)
+    RBPbase = RBPbase.reset_index(drop=True)
+    filepieces = rbp_data.split('.')
+    RBPbase.to_csv(results_dir+filepieces[0]+'_'+species+'.'+filepieces[1], index=False)
+    
+    return
+
+def kaptive_python(project_dir, data_dir, database_name, file_name):
+    """
+    This function is a wrapper for the Kaptive Python file to be executed from another Python script.
+    This wrapper runs on a single FASTA file (one genome) and also produces a single FASTA file.
+    
+    Input:
+    - project_directory: the location of kaptive.py (preferrably in the same project folder)
+    - data_directory: location of the database and sequence file(s) to loop over
+    - database_name: string of the name of the database (.gbk file)
+    - file_name: string of the file name (FASTA)
+    
+    Output:
+    - a single fasta file of the locus (single piece or multiple ones) per genome
+    """
+    cd_command = 'cd ' + project_dir
+    
+    kaptive_command = 'python kaptive.py -a ' + data_dir + '/' + file_name + ' -k ' + data_dir + '/' + database_name + ' -o ' + data_dir + '/ --no_table'
+    command = cd_command + '; ' + kaptive_command
+    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ssout, sserr = ssprocess.communicate()
+    kaptive_file_name = 'kaptive_results_'+file_name
+    
+    return kaptive_file_name, ssout, sserr
+
+def compute_loci(klebsiella_genomes, project_dir, data_dir, database_name):
+    """
+    This function uses kaptive_python to loop over all klebsiella_genomes, construct FASTA files for
+    each of them and identify their loci. Importantly, the file_names are later used to construct embeddings,
+    so need to be identifiable (accession numbers).
+        
+    Input:
+    - klebsiella_genomes: Pandas DataFrame of genomes w/ following column names:
+        'accession', 'sequence' and 'number_of_prophages'
+    - project_directory: the location of kaptive.py (preferrably in the same project folder)
+    - data_directory: location of the database and sequence file(s) to loop over
+    - results_directory: location to store results
+    - database_name: string of the name of the database (.gbk file)
+    """
+    kaptive_file_names = []
+    serotypes = []
+    pbar = tqdm(total=klebsiella_genomes.shape[0])
+    
+    # loop over klebsiella_genomes
+    for i, genome in enumerate(klebsiella_genomes['sequence']):
+        #if klebsiella_genomes['number_of_prophages'][i] > 0: # no filter: rows/columns consistent down the road
+        acc = list(klebsiella_genomes['accession'])[i]
+
+        # make FASTA file
+        file_name = acc+'.fasta'
+        fasta = open(data_dir+'/'+file_name, 'w')
+        fasta.write('>'+acc+'\n'+genome+'\n')
+        fasta.close()
+
+        # run Kaptive
+        kaptive_file, _, _ = kaptive_python(project_dir, data_dir, database_name, file_name)
+        kaptive_file_names.append(kaptive_file)
+
+        # process json -> proteins in fasta
+        results = json.load(open(data_dir+'/kaptive_results.json'))
+        serotypes.append(results[0]['Best match']['Type'])
+        protein_results = open(data_dir+'/kaptive_results_proteins_'+acc+'.fasta', 'w')
+        for gene in results[0]['Locus genes']:
+            try:
+                name = gene['Reference']['Product']
+            except KeyError:
+                name = 'unknown'
+            protein = gene['Reference']['Protein sequence']
+            protein_results.write('>'+name+'\n'+protein[:-1]+'\n')
+        protein_results.close()
+
+        # delete FASTA & temp KAPTIVE files
+        os.remove(data_dir+'/'+file_name)
+        os.remove(data_dir+'/'+file_name+'.ndb')
+        os.remove(data_dir+'/'+file_name+'.not')
+        os.remove(data_dir+'/'+file_name+'.ntf')
+        os.remove(data_dir+'/'+file_name+'.nto')
+        os.remove(data_dir+'/kaptive_results.json')
+
+        # update progress
+        pbar.update(1)
+            
+    pbar.close()
+    return kaptive_file_names, serotypes
+
+
+def RBPbase_fasta_processing(rbp_data, data_dir):
+    """
+    This function processes the RBP database from a Pandas DataFrame to individual fasta files that can be
+    looped over to compute protein embeddings.
+
+    Input:
+    - rbp_data: name of the RBP DataFrame (string) in the data_dir, with protein sequences in column 'protein_seq'
+    - data_dir: location of the database and where the fasta files will be stored (string)
+
+    Output:
+    - fasta files of each of the RBP sequences in the database
+    - big fasta file of all sequences together (for pairwise alignments later)
+    """
+    if data_dir != '':
+        data_dir = data_dir+'/'
+
+    rbp_file_names = []
+    RBPbase = pd.read_csv(data_dir+rbp_data)
+    big_fasta = open(data_dir+rbp_data.split('.')[0]+'.fasta', 'w')
+    for i, sequence in enumerate(RBPbase['protein_seq']):
+        unique_id = RBPbase['unique_ID'][i]
+        rbp_file_names.append(unique_id+'.fasta')
+        
+        # write individual fasta
+        fasta = open(data_dir+unique_id+'.fasta', 'w')
+        fasta.write('>'+unique_id+'\n'+sequence+'\n')
+        fasta.close()
+        
+        # write big fasta
+        big_fasta.write('>'+unique_id+'\n'+sequence+'\n')
+    big_fasta.close()
+
+    return rbp_file_names
+
+
+def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='4'):
+    """
+    Input:
+    - file_name: string of path to the FASTA file to loop over
+    - align_type: type of alignment to execute ('DNA' or 'protein')
+    - project_dir: project directory with julia file in it
+    - n_threads: number of threads to use for multithreading (as string; default=4)
+    
+    Output:
+    - a score matrix of pairwise ID%, named file_name + '_score_matrix.txt'
+
+    Remark: first run the alias command once in therminal to enable julia from command line!
+    """
+    #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
+    threads_command = 'export JULIA_NUM_THREADS=' + n_threads
+    cd_command = 'cd ' + project_dir
+    pw_command = 'julia pairwise_alignment.jl ' + file_name + ' ' + align_type
+    command = threads_command + '; ' + cd_command + '; ' + pw_command
+
+    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ssout, sserr = ssprocess.communicate()
+    
+    return ssout, sserr
+
+
+def get_kaptive_file_names(klebsiella_genomes):
+    """
+    This function is a support function to recollect all kaptive file names without
+    having to recompute all loci.
+    
+    Input: klebsiella genomes DataFrame (columns: 'accession', 'sequence' and 'number_of_prophages')
+    Output: list kaptive_file_names
+    """
+    kaptive_file_names = []
+    for acc in klebsiella_genomes['accession']:
+        file_name = 'kaptive_results_'+acc+'.fasta'
+        kaptive_file_names.append(file_name)
+    return kaptive_file_names
+
+
+def kaptive_fasta_processing(kaptive_file_names, data_dir):
+    """
+    This function processes all the separate bacterial loci FASTA files into one merged FASTA file for 
+    further processing (pairwise alignments).
+    
+    Input:
+    - kaptive_file_names: list of fasta filenames of bacterial loci (output of Kaptive)
+    - data_dir: location of the sequence file(s) to loop over
+    """
+    kaptive_fasta_all = data_dir+'/kaptive_results_all.fasta'
+    big_fasta = open(kaptive_fasta_all, 'w')
+    for name in kaptive_file_names:
+        kaptive_id = name.split('.fasta')[0].split('kaptive_results_')[1]
+        locus_sequence = ''
+        for record in SeqIO.parse(data_dir+'/'+name, 'fasta'):
+            locus_sequence += str(record.seq)   
+        big_fasta.write('>'+kaptive_id+'\n'+locus_sequence+'\n')
+    big_fasta.close()
+
+    return kaptive_fasta_all
+
+
+def cdhit_est_python(cdhit_path, data_dir, kaptive_file_names, kaptive_fasta, output_file, c=0.90, n=7):
+    """
+    This function executes CD-HIT-EST (DNA sequences) clustering commands from within Python. 
+    To install CD-HIT, do so via conda: conda install -c bioconda cd-hit.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - kaptive_file_names: list of file names for ordering
+        - kaptive_fasta: FASTA file with locus sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+        - n: word length (7 for thresholds between 0.88 and 0.9, DNA level)
+    """
+    
+    # perform clustering
+    cd_command = 'cd ' + cdhit_path
+    cluster_command = './cd-hit-est -i ' + kaptive_fasta + ' -o ' + output_file + ' -c ' + str(c) + ' -n ' + str(n) + ' -d 0'
+    command = cd_command + '; ' + cluster_command
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    # load results and process
+    score_matrix = np.zeros((len(kaptive_file_names), len(kaptive_file_names)))
+    clusters = open(output_file+'.clstr')
+    cluster_iter = 0
+    cluster_accessions = []
+    for line in clusters.readlines():
+        # new cluster
+        if line[0] == '>':
+            # finish old cluster if not first one
+            if (cluster_iter > 0) and (len(cluster_accessions) > 1):
+                indices = [kaptive_file_names.index('kaptive_results_'+acc+'.fasta') for acc in cluster_accessions]
+                for i in range(len(indices)-1):
+                    for j in range(i, len(indices)):
+                        if indices[i] != indices[j]:
+                            score_matrix[indices[i],indices[j]], score_matrix[indices[j],indices[i]] = c, c
+                
+            # initiate new cluster
+            cluster_accessions = []
+            cluster_iter += 1
+            
+        # in a cluster
+        else:
+            acc = line.split('>')[1].split('...')[0]
+            cluster_accessions.append(acc)
+            
+    # finish last cluster
+    if len(cluster_accessions) > 1:
+        indices = [kaptive_file_names.index('kaptive_results_'+acc+'.fasta') for acc in cluster_accessions]
+        for i in range(len(indices)-1):
+            for j in range(i, len(indices)):
+                score_matrix[i,j], score_matrix[j,i] = c, c
+    
+    # assess identicals
+    np.fill_diagonal(score_matrix, 1)
+    for i in range(len(kaptive_file_names)-1):
+        for j in range(i, len(kaptive_file_names)):
+            seq_li = ''; seq_lj = ''
+            for record in SeqIO.parse(data_dir+'/'+kaptive_file_names[i], 'fasta'):
+                seq_li += str(record.seq)
+            for record in SeqIO.parse(data_dir+'/'+kaptive_file_names[j], 'fasta'):
+                seq_lj += str(record.seq)
+            if seq_li == seq_lj:
+                score_matrix[i,j], score_matrix[j,i] = 1, 1
+           
+    np.savetxt(output_file+'_score_matrix.txt', score_matrix, fmt='%.3f')
+            
+    return stdout, stderr

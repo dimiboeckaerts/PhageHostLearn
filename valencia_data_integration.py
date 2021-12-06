@@ -199,14 +199,6 @@ RBPsV = pd.DataFrame({'phage_nr': RBPs['phage_ID'], 'host': ['klebsiella_pneumon
                 'protein_seq': proteins, 'N_blocks': N_list, 'C_blocks': C_list, 'N_ranges': rangeN_list, 
                 'C_ranges': rangeC_list, 'unique_ID': unique_ids})
 
-# filter for length
-to_delete = []
-for i, sequence in enumerate(RBPsV.protein_seq):
-    if (len(sequence) < 250) or (len(sequence) > 1500):
-        to_delete.append(i)
-RBPsV = RBPsV.drop(to_delete)
-RBPsV = RBPsV.reset_index(drop=True)
-
 # save dataframe
 RBPsV.to_csv(valencia_dir+'/RBPbaseValencia.csv', index=False)
 
@@ -244,15 +236,15 @@ klebsiella_valencia = pd.DataFrame({'GI': ['-']*len(klebs_files),'accession': ER
                         'organism': ['Klebsiella pneumoniae']*len(klebs_files),'sequence': genome_list,
                         'sequencing_info': ['-']*len(klebs_files),'strain': strain_list,
                         'number_of_prophages': ['-']*len(klebs_files)})
-klebsiella_valencia.to_csv(klebsiella_dir+'/klebsiellaGenomesValencia.csv', index=False)
+klebsiella_valencia.to_csv(valencia_dir+'/klebsiellaGenomesValencia.csv', index=False)
 # %% Merge with prophage data and keep origin
 klebsiellaOriginal = pd.read_csv('/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/Klebsiella_RBP_data/phagebase1_klebsiella_pneumoniae.csv')
-klebsiellaValencia = pd.read_csv(klebsiella_dir+'/klebsiellaGenomesValencia.csv')
+klebsiellaValencia = pd.read_csv(valencia_dir+'/klebsiellaGenomesValencia.csv')
 klebsiellaOriginal['origin'] = ['prophage']*klebsiellaOriginal.shape[0]
 klebsiellaValencia['origin'] = ['valencia']*klebsiellaValencia.shape[0]
 klebsiella_genomes = pd.concat([klebsiellaOriginal, klebsiellaValencia])
 klebsiella_genomes.reset_index(drop=True, inplace=True)
-klebsiella_genomes.to_csv('/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/Klebsiella_RBP_data/klebsiella_genomes_301121.csv', index=False)
+klebsiella_genomes.to_csv('/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/Klebsiella_RBP_data/klebsiella_genomes_031221.csv', index=False)
 
 
 # %% 5 - Process interaction matrix
@@ -276,3 +268,5 @@ for i, row in enumerate(row_names):
 
 IMValencia = pd.DataFrame(interactions, index=row_names, columns=column_names)
 IMValencia.to_csv(valencia_dir+'/interactionsValencia.csv')
+
+# %%
