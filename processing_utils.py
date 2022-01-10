@@ -440,6 +440,28 @@ def cdhit_python(cdhit_path, input_file, output_file, c=0.50, n=3):
     return stdout, stderr
 
 
+def psi_cdhit_python(cdhit_path, input_file, output_file, c=0.30):
+    """
+    This function executes PSI CD-HIT clustering commands from within Python. To install
+    CD-HIT, do so via conda: conda install -c bioconda cd-hit. By default, CD-HIT
+    works via a global alignment approach, which is good for our application as
+    we cut the sequences to 'one unknown domain' beforehand.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - input_file: FASTA file with protein sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+    """
+    cd_str = 'cd ' + cdhit_path # change directory
+    raw_str = './psi-cd-hit.pl -i ' + input_file + ' -o ' + output_file + ' -c ' + str(c)
+    command = cd_str+'; '+ raw_str
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    return stdout, stderr
+
+
 def RBPbase_species_filter(rbp_data, data_dir, results_dir, species):
     """
     This function creates a subset of RBPbase for a specific host species for further processing.

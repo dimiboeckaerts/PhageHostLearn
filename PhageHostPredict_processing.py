@@ -210,4 +210,21 @@ IM_klebsiella = pd.DataFrame(klebsiella_interactions, index=row_names, columns=c
 IM_klebsiella.to_csv(klebsiella_dir+'/interactions_klebsiella.csv')
 
 
-# %%
+# %% 4 - MONO RBP FILTERING
+# --------------------------------------------------
+"""
+Here, we adjust the interaction matrix again to only contain phages that have a single RBP 
+(if any multi-RBP phages left after previous filtering). Again, this only changes the interaction matrix,
+it's this one that will be used to construct a frame for training later.
+"""
+IM_klebsiella = pd.read_csv(klebsiella_dir+'/interactions_klebsiella.csv', index_col=0)
+klebsiella_interactions = np.asarray(IM_klebsiella)
+multi_RBP_phages = [name[:-5] for name in IM_klebsiella.columns if 'RBP1' in name]
+row_names = IM_klebsiella.index
+column_names = IM_klebsiella.columns
+for j, column in enumerate(IM_klebsiella.columns):
+    if column[:-5] in multi_RBP_phages:
+        for i in range(IM_klebsiella.shape[0]):
+            klebsiella_interactions[i,j] = np.nan
+IM_klebsiella = pd.DataFrame(klebsiella_interactions, index=row_names, columns=column_names)
+IM_klebsiella.to_csv(klebsiella_dir+'/interactions_klebsiella_mono.csv')
