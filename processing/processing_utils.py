@@ -22,31 +22,6 @@ from Bio.SearchIO import HmmerIO
 
 # 1 - FUNCTIONS
 # --------------------------------------------------
-def kaptive_python(project_dir, data_dir, database_name, file_names, results_dir):
-    """
-    This function is a wrapper for the Kaptive Python file to be executed from another Python script.
-    
-    Input:
-    - project_directory: the location of kaptive.py (preferrably in the same project folder)
-    - data_directory: location of the database and sequence file(s) to loop over
-    - database_name: string of the name of the database (.gbk file)
-    - file_names: list of one or multiple strings of the file name(s)
-    
-    Output:
-    - a single fasta file of the locus per (a single piece or multiple ones)
-    """
-    cd_command = 'cd ' + project_dir
-    kaptive_file_names = []
-    
-    for name in tqdm(file_names):
-        kaptive_command = 'python kaptive.py -a ' + data_dir + '/' + name + ' -k ' + data_dir + '/' + database_name + ' -o ' + results_dir + '/ --no_table --no_json'
-        command = cd_command + '; ' + kaptive_command
-        ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        ssout, sserr = ssprocess.communicate()
-        kaptive_file_names.append('kaptive_results_'+name)
-        
-    return kaptive_file_names, ssout, sserr
-
 def hmmpress_python(hmm_path, pfam_file):
     """
     Presses a profiles database, necessary to do scanning.
@@ -744,3 +719,39 @@ def cdhit_est_python(cdhit_path, data_dir, kaptive_file_names, kaptive_fasta, ou
     np.savetxt(output_file+'_score_matrix.txt', score_matrix, fmt='%.3f')
             
     return stdout, stderr
+
+
+def RBPbase_identifiers(rbp_data, data_dir):
+    """
+    This function adds unique IDs to all RBP sequences in the RBP database. As the unit for further
+    processing is an RBP sequence, each RBP sequence should have a unique identifier.
+
+    Input:
+    - rbp_data: name of the RBP database (string)
+    - data_dir: location of the database and where the fasta files will be stored (string)
+
+    Output:
+    - adjusted RBPbase (extra column with unique_ID)
+    """
+    if data_dir != '':
+        data_dir = data_dir+'/'
+
+    RBPbase = pd.read_csv(data_dir+rbp_data)
+    unique_id_list = []
+    phage_id_list = []
+    for i, phage_nr in enumerate(RBPbase['phage_nr']):
+        phage_id = str(phage_nr)+str(RBPbase['host'][i])
+        # first RBP
+        if phage_id not in phage_id_list:
+            count = 0
+            phage_id_list.append(phage_id)
+            unique_id_list.append(phage_id+'_RBP'+str(count))
+        # second, third, ... RBP
+        else:
+            count += 1
+            unique_id_list.append(phage_id+'_RBP'+str(count))
+
+    RBPbase['unique_ID'] = unique_id_list
+    RBPbase.to_csv(data_dir+rbp_data)
+
+    return

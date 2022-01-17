@@ -203,7 +203,7 @@ for i in range(rbp_sim.shape[0]-1):
             
             for li in locus_i:
                 for lj in locus_j:
-                    if loci_sim[li, lj] == 1: # if identical, delete
+                    if loci_sim[li, lj] == 1: # if identical delete one of both
                         klebsiella_interactions[lj,j] = np.nan
 print(sum(sum(klebsiella_interactions == 1)))
 IM_klebsiella = pd.DataFrame(klebsiella_interactions, index=row_names, columns=column_names)

@@ -203,6 +203,7 @@ RBPsV = pd.DataFrame({'phage_nr': RBPs['phage_ID'], 'host': ['klebsiella_pneumon
 RBPsV.to_csv(valencia_dir+'/RBPbaseValencia.csv', index=False)
 
 # %% Integrate with RBPbase
+pu.RBPbase_identifiers('RBPbase_250621.csv', '/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA')
 RBPbaseOriginal = pd.read_csv('/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/RBPbase_250621.csv')
 RBPbaseOriginal['origin'] = ['prophage']*RBPbaseOriginal.shape[0]
 RBPbaseValencia = pd.read_csv(valencia_dir+'/RBPbaseValencia.csv')
