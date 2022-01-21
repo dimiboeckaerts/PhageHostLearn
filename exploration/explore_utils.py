@@ -517,3 +517,29 @@ def domain_cluster_graph(hmm_path, pfam_db, sequences, filename='domains_circos.
     plt.savefig(filename, dpi=400)
     
     return
+
+
+def cdhit_python(cdhit_path, input_file, output_file, c=0.50, n=3):
+    """
+    This function executes CD-HIT clustering commands from within Python. To install
+    CD-HIT, do so via conda: conda install -c bioconda cd-hit. By default, CD-HIT
+    works via a global alignment approach, which is good for our application as
+    we cut the sequences to 'one unknown domain' beforehand.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - input_file: FASTA file with protein sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+        - n: word length (3 for thresholds between 0.5 and 0.6)
+    """
+    
+    cd_str = 'cd ' + cdhit_path # change directory
+    raw_str = './cd-hit -i ' + input_file + ' -o ' + output_file + ' -c ' + str(c) + ' -n ' + str(n) + ' -d 0'
+    command = cd_str+'; '+ raw_str
+    #cd_process = subprocess.Popen(cd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    #cd_out, cd_err = cd_process.communicate()
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    return stdout, stderr
