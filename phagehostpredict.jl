@@ -36,7 +36,7 @@ function file_to_array(file)
 end
 
 
-# PhageHostLearning
+# PhageHostLearning: computing embeddings
 # --------------------------------------------------
 # load data and set names
 IM = DataFrame(CSV.File(data_dir*"/interactions_klebsiella_mono.csv"))
@@ -54,7 +54,6 @@ rbp_sequences = rbps.protein_seq
 alphabet = "GAVLIFPSTYCMKRHWDENQX"
 basis = Dict(c=>BipolarHDV() for c in alphabet)
 
-
 # compute loci embeddings w/ proteins (multi-instance)
 loci_embeddings = Array{BipolarHDV}(undef, length(loci_sequences))
 for (i, (name, proteins)) in enumerate(loci_sequences)
@@ -70,6 +69,9 @@ for (i, sequence) in enumerate(rbp_sequences)
     rbp_embeddings[i] = sequence_embedding(string(sequence), basis, 3)
 end
 
+
+# PhageHostLearning: first test
+# --------------------------------------------------
 # compute rbp-receptor signatures (bind)
 signatures_pos = []
 signatures_neg = []
@@ -85,7 +87,6 @@ end
 signatures_pos = convert(Array{BipolarHDV}, signatures_pos)
 signatures_neg = convert(Array{BipolarHDV}, signatures_neg)
 println("pos: ", length(signatures_pos), " neg: ", length(signatures_neg))
-
 
 # shuffle and split in train-test
 sign_pos = shuffle(signatures_pos)
@@ -112,6 +113,91 @@ histogram!(dist_neg_test, label="negative test", alpha=0.7, nbins=30)
 plot(sort!(dist_pos_test), label="positive test", alpha=0.7, legend=:bottomright, xlabel="rank", ylabel="Cosine sim")
 plot!(sort!(dist_neg_test), label="negative test", alpha=0.7)
 
+
+# PhageHostLearning: cross-validation
+# --------------------------------------------------
+"""
+Here, we perform a 10-fold CV over the loci, just like we do to evaluate the
+binary classifiers in Python.
+"""
+loci_known = [x for x in range(1, length=length(loci_sequences)) 
+                if (any(isequal.(interaction_matrix[x,:], 0))) 
+                    || (any(isequal.(interaction_matrix[x,:], 1)))]
+
+# shuffle loci
+loci_shuffle = shuffle(loci_known)
+
+# divide into 10 groups
+group_size = div(length(loci_shuffle), 10) + 1
+get_groups(x, n) = [x[i:min(i+n-1,length(x))] for i in 1:n:length(x)]
+loci_groups = get_groups(loci_shuffle, group_size)
+
+# loop over groups
+loci_nr = []; rbp_nr = []; scores = []; labels = []
+for group in loci_groups
+    # compute signatures for training and testing parts (group = test)
+    signatures_train_pos = []
+    signatures_train_neg = []
+    signatures_test = []
+    for (i, loci_embedding) in enumerate(loci_embeddings)
+        for (j, rbp_embedding) in enumerate(rbp_embeddings)
+            # training pos interaction
+            if isequal(interaction_matrix[i,j], 1) && i ∉ group
+                push!(signatures_train_pos, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
+            # training neg interaction
+            elseif isequal(interaction_matrix[i,j], 0) && i ∉ group
+                push!(signatures_train_neg, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
+            # test interaction
+            elseif isequal(interaction_matrix[i,j], 1) && i in group
+                push!(signatures_test, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
+                push!(loci_nr, i)
+                push!(rbp_nr, j)
+                push!(labels, interaction_matrix[i,j])
+            elseif isequal(interaction_matrix[i,j], 0) && i in group
+                push!(signatures_test, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
+                push!(loci_nr, i)
+                push!(rbp_nr, j)
+                push!(labels, interaction_matrix[i,j])
+            end
+        end
+    end
+
+    # convert signatures
+    signatures_train_pos = convert(Array{BipolarHDV}, signatures_train_pos)
+    signatures_train_neg = convert(Array{BipolarHDV}, signatures_train_neg)
+    signatures_test = convert(Array{BipolarHDV}, signatures_test)
+    println("train size:", length(signatures_train_pos)+length(signatures_train_neg))
+    println("test size:", length(signatures_test))
+    
+    # aggregate training signatures
+    signatures_pos_agg = HyperdimensionalComputing.aggregate(signatures_train_pos)
+    signatures_neg_agg = HyperdimensionalComputing.aggregate(signatures_train_neg)
+
+    # compute distance/similarity to test signatures
+    for test in signatures_test
+        score_pos_agg = cos_sim(signatures_pos_agg, test)
+        score_neg_agg = cos_sim(signatures_neg_agg, test)
+        push!(scores, score_pos_agg/score_neg_agg) # > 1 then pos, < 1 then neg
+    end
+end
+
+# examine scores
+histogram(scores, xlabel="score", ylabel="count")
+sum(scores .< 1)/length(scores)
+"""
+NOTES
+
+* scores
+We notice that only 0.4% of all scores are below 1. A score of 1 signals that the
+similarities toward positive and negative are equal. So everything below 1 should below
+a negative (as we have constructed the ration with pos in numerator). Only 0.4% is below
+that threshold of 1, so does that make sense? No. Because we would actually expect most
+of the samples (most are negative), to be below 1...
+"""
+
+
 # train layer 1
 #layer1 = train(labels, loci_embeddings)
 #retrain!(layer1, labels, loci_embeddings, niters=10)
+
+

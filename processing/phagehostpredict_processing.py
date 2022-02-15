@@ -97,7 +97,8 @@ for record in SeqIO.parse(output_file+'.fasta', 'fasta'):
 
 # %% 3) make list RBPs_with_Bhelix -> all identified + manuals checked
 RBPs_with_Bhelix = [x for x in white_list if 'identified' in x]
-manual_checks = ['7klebsiella_pneumoniae_RBP0', '19klebsiella_pneumoniae_RBP0', '213klebsiella_pneumoniae_RBP0']
+manual_checks = ['7klebsiella_pneumoniae_RBP0', '9klebsiella_pneumoniae_RBP1', '19klebsiella_pneumoniae_RBP0', '170klebsiella_pneumoniae_RBP0', 
+                    '213klebsiella_pneumoniae_RBP0', '253klebsiella_pneumoniae_RBP1', '339klebsiella_pneumoniae_RBP0', '807klebsiella_pneumoniae_RBP0']
 RBPs_with_Bhelix = RBPs_with_Bhelix + manual_checks
 
 # 4) loop over clusters: if one in RBPs_with_Bhelix -> white list entire cluster
@@ -111,7 +112,7 @@ for line in clusters.readlines():
     if line[0] == '>':
         # finish old cluster if not first one
         if (cluster_iter > 0) and (len(cluster_accessions) >= 1):
-            if white_check == 1: # an B-helix RBP in cluster
+            if white_check == 1: # an identified RBP in cluster
                 white_list = white_list+cluster_accessions
         # initiate new cluster
         cluster_accessions = []
@@ -228,3 +229,5 @@ for j, column in enumerate(IM_klebsiella.columns):
             klebsiella_interactions[i,j] = np.nan
 IM_klebsiella = pd.DataFrame(klebsiella_interactions, index=row_names, columns=column_names)
 IM_klebsiella.to_csv(klebsiella_dir+'/interactions_klebsiella_mono.csv')
+
+# %%
