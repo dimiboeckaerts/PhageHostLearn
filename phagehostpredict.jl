@@ -19,6 +19,8 @@ using StatsBase
 #using Pluto
 
 data_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/klebsiella_RBP_data"
+results_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/43_RESULTS/models"
+
 
 # FUNCTIONS
 # --------------------------------------------------
@@ -133,7 +135,7 @@ get_groups(x, n) = [x[i:min(i+n-1,length(x))] for i in 1:n:length(x)]
 loci_groups = get_groups(loci_shuffle, group_size)
 
 # loop over groups
-loci_nr = []; rbp_nr = []; scores = []; labels = []
+loci_nr = []; rbp_nr = []; scores = []; scores_pos = []; labels = []
 for group in loci_groups
     # compute signatures for training and testing parts (group = test)
     signatures_train_pos = []
@@ -150,13 +152,13 @@ for group in loci_groups
             # test interaction
             elseif isequal(interaction_matrix[i,j], 1) && i in group
                 push!(signatures_test, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
-                push!(loci_nr, i)
-                push!(rbp_nr, j)
+                push!(loci_nr, i-1) # -1 to cope with indexing python
+                push!(rbp_nr, j-1)
                 push!(labels, interaction_matrix[i,j])
             elseif isequal(interaction_matrix[i,j], 0) && i in group
                 push!(signatures_test, HyperdimensionalComputing.bind([loci_embedding, rbp_embedding]))
-                push!(loci_nr, i)
-                push!(rbp_nr, j)
+                push!(loci_nr, i-1)
+                push!(rbp_nr, j-1)
                 push!(labels, interaction_matrix[i,j])
             end
         end
@@ -178,8 +180,18 @@ for group in loci_groups
         score_pos_agg = cos_sim(signatures_pos_agg, test)
         score_neg_agg = cos_sim(signatures_neg_agg, test)
         push!(scores, score_pos_agg/score_neg_agg) # > 1 then pos, < 1 then neg
+        push!(scores_pos, score_pos_agg)
     end
 end
+
+# results pos vs. neg
+results = DataFrame(locus=loci_nr, rbps=rbp_nr, scores=scores, label=labels)
+CSV.write(results_dir*"/results_HDC_grouped10CV_alldata.csv", results)
+
+# results pos only
+results = DataFrame(locus=loci_nr, rbps=rbp_nr, scores=scores_pos, label=labels)
+CSV.write(results_dir*"/results_HDCpos_grouped10CV_alldata.csv", results)
+
 
 # examine scores
 histogram(scores, xlabel="score", ylabel="count")

@@ -9,11 +9,14 @@ PROCESSING UTILS FOR THE RBP-R PREDICTION FRAMEWORK
 # 0 - LIBRARIES
 # --------------------------------------------------
 import os
+import re
 import json
 import math
 import subprocess
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatch
 from tqdm import tqdm
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -29,29 +32,23 @@ def hmmpress_python(hmm_path, pfam_file):
     
     # change directory
     cd_str = 'cd ' + hmm_path
-    cd_process = subprocess.Popen(cd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    cd_out, cd_err = cd_process.communicate()
-    
-    # compress the profiles db
     press_str = 'hmmpress ' + pfam_file
-    press_process = subprocess.Popen(press_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    command = cd_str+'; '+press_str
+    press_process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     press_out, press_err = press_process.communicate()
 
     return press_out, press_err
+
 
 def hmmbuild_python(hmm_path, output_file, msa_file):
     """
     Build a profile HMM from an input multiple sequence alignment (Stockholm format).
     """
     
-    # change directory
-    cd_str = 'cd ' + hmm_path
-    cd_process = subprocess.Popen(cd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    cd_out, cd_err = cd_process.communicate()
-    
-    # compress the profiles db
+    cd_str = 'cd ' + hmm_path # change dir
     press_str = 'hmmbuild ' + output_file + ' ' + msa_file
-    press_process = subprocess.Popen(press_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    command = cd_str+'; '+press_str
+    press_process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     press_out, press_err = press_process.communicate()
 
     return press_out, press_err
@@ -100,7 +97,6 @@ def hmmscan_python(hmm_path, pfam_file, sequences_file, threshold=18):
     scores = []
     biases = []
     ranges = []
-    count_dict = {}
     for sequence in SeqIO.parse(sequences_file, 'fasta'):
         # make single-sequence FASTA file
         temp_fasta = open('single_sequence.fasta', 'w')
@@ -123,15 +119,12 @@ def hmmscan_python(hmm_path, pfam_file, sequences_file, threshold=18):
                         scores.append(hit.bitscore)
                         biases.append(hit.bias)
                         ranges.append((aln_start,aln_stop))
-                        count_dict[hit.id] = 1
-                    elif (hit.bitscore >= threshold) & (hit.id in domains):
-                        count_dict[hit.id] += 1
             except IndexError: # some hits don't have an individual domain hit
                 pass
     
     # remove last temp fasta file
     os.remove('single_sequence.fasta')
-    
+
     return domains, scores, biases, ranges
     
 
@@ -387,6 +380,80 @@ def domain_RBP_predictor(path, pfam_file, sequences, structural=[], binding=[], 
             predictions_dict['archived_domains'].append(archive_detected)
     
     return predictions_dict
+
+
+def RBPdetect_domains(path, pfam_file, sequences, identifiers, N_blocks=[], C_blocks=[], detect_others=True):
+    """
+    This function serves as the main function to do domain-based RBP detection based on
+    either a manually curated list of RBP-related Pfam domains or Pfam domains appended with 
+    custom HMMs. If custom HMMs are added, these HMMs must correspondingly be added in the Pfam
+    database that is scanned!
+
+    Inputs:
+    - path: path to HMM software for detection of the domains
+    - pfam_file: link to local Pfam database file (string)
+    - sequences: list of strings, DNA sequences
+    - identifiers: corresponding list of identifiers for the sequences (string)
+    - N_blocks: list of structural (N-terminal) domains as strings (corresponding to names in Pfam database)
+    - C_blocks: list of binding (C-terminal) domains as strings (corresponding to names in Pfam database)
+
+    Output:
+    - a dataframe of RBPs
+    """
+    bar = tqdm(total=len(sequences), leave=True, desc='Scanning the genes')
+    N_list = []; C_list = []
+    rangeN_list = []; rangeC_list = []
+    sequences_list = []; identifiers_list = []
+    for i, sequence in enumerate(sequences):
+        N_sequence = []
+        C_sequence = []
+        rangeN_sequence = []
+        rangeC_sequence = []
+        domains, scores, biases, ranges = gene_domain_scan(path, pfam_file, [sequence], threshold=18)
+        if len(domains) > 0:
+            for j, dom in enumerate(domains):
+                OM_score = math.floor(math.log(scores[j], 10)) # order of magnitude
+                OM_bias = math.floor(math.log(biases[j]+0.00001, 10))
+                
+                # N-terminal block
+                if (OM_score > OM_bias) and (dom in N_blocks):
+                    N_sequence.append(dom)
+                    rangeN_sequence.append(ranges[j])
+                
+                # C-terminal block
+                elif (OM_score > OM_bias) and (dom in C_blocks) and (scores[j] >= 25):
+                    C_sequence.append(dom)
+                    rangeC_sequence.append(ranges[j])
+                
+                # other block
+                elif (detect_others == True) and (OM_score > OM_bias) and (dom not in N_blocks) and (dom not in C_blocks):
+                    if ranges[j][1] <= 200:
+                        N_sequence.append('other')
+                        rangeN_sequence.append(ranges[j])
+                    elif (ranges[j][1] > 200) and (scores[j] >= 25):
+                        C_sequence.append('other')
+                        rangeC_sequence.append(ranges[j])
+                 
+            # add to the global list
+            if (len(N_sequence) > 0) or (len(C_sequence) > 0):
+                N_list.append(N_sequence)
+                C_list.append(C_sequence)
+                rangeN_list.append(rangeN_sequence)
+                rangeC_list.append(rangeC_sequence)
+                sequences_list.append(sequence)
+                identifiers_list.append(identifiers[i])
+
+        # update bar
+        bar.update(1)
+    bar.close()
+
+    # delete fasta
+    os.remove('protein_hits.fasta')
+
+    # make dataframe
+    detected_RBPs = pd.DataFrame({'identifier':identifiers_list, 'DNASeq':sequences_list, 'N_blocks':N_list, 'C_blocks':C_list, 
+                                'N_ranges':rangeN_list, 'C_ranges':rangeC_list})
+    return detected_RBPs
 
 
 def cdhit_python(cdhit_path, input_file, output_file, c=0.50, n=3):

@@ -98,7 +98,9 @@ for record in SeqIO.parse(output_file+'.fasta', 'fasta'):
 # %% 3) make list RBPs_with_Bhelix -> all identified + manuals checked
 RBPs_with_Bhelix = [x for x in white_list if 'identified' in x]
 manual_checks = ['7klebsiella_pneumoniae_RBP0', '9klebsiella_pneumoniae_RBP1', '19klebsiella_pneumoniae_RBP0', '170klebsiella_pneumoniae_RBP0', 
-                    '213klebsiella_pneumoniae_RBP0', '253klebsiella_pneumoniae_RBP1', '339klebsiella_pneumoniae_RBP0', '807klebsiella_pneumoniae_RBP0']
+                    '213klebsiella_pneumoniae_RBP0', '253klebsiella_pneumoniae_RBP1', '339klebsiella_pneumoniae_RBP0', '807klebsiella_pneumoniae_RBP0',
+                    '1144klebsiella_pneumoniae_RBP0', '1208klebsiella_pneumoniae_RBP0', 'K2alfa62_RBP0', 'K9PH25C2_RBP0', 'K16PH164C3_RBP0', 'K35PH164C3_RBP0', 
+                    'K39PH122C2_RBP1']
 RBPs_with_Bhelix = RBPs_with_Bhelix + manual_checks
 
 # 4) loop over clusters: if one in RBPs_with_Bhelix -> white list entire cluster
