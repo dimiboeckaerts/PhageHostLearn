@@ -536,7 +536,8 @@ def RBPbase_species_filter(rbp_data, data_dir, results_dir, species):
     
     return
 
-def kaptive_python(project_dir, data_dir, database_name, file_name):
+
+def kaptive_python_old(project_dir, data_dir, database_name, file_name):
     """
     This function is a wrapper for the Kaptive Python file to be executed from another Python script.
     This wrapper runs on a single FASTA file (one genome) and also produces a single FASTA file.
@@ -559,6 +560,7 @@ def kaptive_python(project_dir, data_dir, database_name, file_name):
     kaptive_file_name = 'kaptive_results_'+file_name
     
     return kaptive_file_name, ssout, sserr
+
 
 def compute_loci(klebsiella_genomes, project_dir, data_dir, database_name):
     """
@@ -590,7 +592,7 @@ def compute_loci(klebsiella_genomes, project_dir, data_dir, database_name):
         fasta.close()
 
         # run Kaptive
-        kaptive_file, _, _ = kaptive_python(project_dir, data_dir, database_name, file_name)
+        kaptive_file, _, _ = kaptive_python_old(project_dir, data_dir, database_name, file_name)
         kaptive_file_names.append(kaptive_file)
 
         # process json -> proteins in fasta
@@ -619,6 +621,88 @@ def compute_loci(klebsiella_genomes, project_dir, data_dir, database_name):
             
     pbar.close()
     return kaptive_file_names, serotypes
+
+
+def kaptive_python(kaptive_directory, database_path, file_path, output_path):
+    """
+    This function is a wrapper for the Kaptive Python file to be executed from another Python script.
+    This wrapper runs on a single FASTA file (one genome) and also produces a single FASTA file.
+    
+    Input:
+    - kaptive_directory: directory with kaptive.py in
+    - database_path: path (string) to the database (.gbk file)
+    - file_path: path (string) to the file (FASTA)
+    - output_path: path for output
+    
+    Output:
+    - a single fasta file of the locus (single piece or multiple ones) per genome
+    """
+    cd_command = 'cd ' + kaptive_directory
+    
+    kaptive_command = 'python kaptive.py -a ' + file_path + ' -k ' + database_path + ' -o ' + output_path + '/ --no_table'
+    command = cd_command + '; ' + kaptive_command
+    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ssout, sserr = ssprocess.communicate()
+    
+    return ssout, sserr
+
+
+def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_directory, output_path):
+    """
+    Computes Kaptive for each FASTA in a given directory.
+    
+    Input:
+    - kaptive_path: path to kaptive.py
+    - database_path: path (string) to the database (.gbk file)
+    - fastas_directory: path (string) to the files (FASTA)
+    - output_path: path for output
+    
+    Output:
+    - json file of dictionary {accession1: [protein1, protein2, ...], ...}
+    """
+    # get fasta files
+    fastas = os.listdir(fastas_directory)
+    try:
+        fastas.remove('.DS_Store')
+    except:
+        pass
+    
+    accessions = [file.split('_')[0] for file in fastas]
+    serotypes = []
+    loci_results = {}
+    pbar = tqdm(total=len(fastas))
+    for i, file in enumerate(fastas):
+        # run kaptive
+        file_path = fastas_directory+'/'+file
+        out, err = kaptive_python(kaptive_directory, database_path, file_path, output_path)
+        
+        # process json -> proteins in dictionary
+        results = json.load(open(output_path+'/kaptive_results.json'))
+        serotypes.append(results[0]['Best match']['Type'])
+        for gene in results[0]['Locus genes']:
+            try:
+                name = gene['Reference']['Product']
+            except KeyError:
+                name = 'unknown'
+            protein = gene['Reference']['Protein sequence']
+            if accessions[i] in list(loci_results.keys()):
+                loci_results[accessions[i]].append(protein[:-1])
+            else:
+                loci_results[accessions[i]] = [protein]
+
+        # delete temp kaptive files
+        os.remove(file_path+'.ndb')
+        os.remove(file_path+'.not')
+        os.remove(file_path+'.ntf')
+        os.remove(file_path+'.nto')
+        os.remove(output_path+'/kaptive_results.json')
+        os.remove(output_path+'/kaptive_results_'+file)
+
+        # update progress
+        pbar.update(1)
+    pbar.close()
+    
+    return loci_results, serotypes
 
 
 def RBPbase_fasta_processing(rbp_data, data_dir):
