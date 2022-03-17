@@ -671,6 +671,7 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
     serotypes = []
     loci_results = {}
     pbar = tqdm(total=len(fastas))
+    big_fasta = open(output_path+'/kaptive_results_all_loci.fasta', 'w')
     for i, file in enumerate(fastas):
         # run kaptive
         file_path = fastas_directory+'/'+file
@@ -690,6 +691,12 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
             else:
                 loci_results[accessions[i]] = [protein]
 
+        # write big fasta file with loci
+        loci_sequence = ''
+        for record in SeqIO.parse(output_path+'/kaptive_results_'+file, 'fasta'):
+            loci_sequence = loci_sequence + str(record.seq)
+        big_fasta.write('>'+file.split('_')[0]+'\n'+loci_sequence+'\n')
+
         # delete temp kaptive files
         os.remove(file_path+'.ndb')
         os.remove(file_path+'.not')
@@ -701,6 +708,7 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
         # update progress
         pbar.update(1)
     pbar.close()
+    big_fasta.close()
     
     return loci_results, serotypes
 
@@ -740,13 +748,13 @@ def RBPbase_fasta_processing(rbp_data, data_dir):
     return rbp_file_names
 
 
-def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='4'):
+def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='6'):
     """
     Input:
     - file_name: string of path to the FASTA file to loop over
     - align_type: type of alignment to execute ('DNA' or 'protein')
     - project_dir: project directory with julia file in it
-    - n_threads: number of threads to use for multithreading (as string; default=4)
+    - n_threads: number of threads to use for multithreading (as string; default=6)
     
     Output:
     - a score matrix of pairwise ID%, named file_name + '_score_matrix.txt'

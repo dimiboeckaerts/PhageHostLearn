@@ -26,7 +26,7 @@ end
 
 function pwalign(args)
     """
-    Function that does pairwise alignments of protein sequences in given FASTA file
+    Function that does pairwise alignments of sequences in given FASTA file
     and returns a score matrix.
     """
 

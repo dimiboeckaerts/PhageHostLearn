@@ -1,4 +1,6 @@
 """
+DEPRECATED: see 'phagehostpredict_processing' notebook
+
 PhageHostPredict (klebsiella) DATA PROCESSING
 
 Created on 25/11/21
