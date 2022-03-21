@@ -689,7 +689,7 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
             if accessions[i] in list(loci_results.keys()):
                 loci_results[accessions[i]].append(protein[:-1])
             else:
-                loci_results[accessions[i]] = [protein]
+                loci_results[accessions[i]] = [protein[:-1]]
 
         # write big fasta file with loci
         loci_sequence = ''

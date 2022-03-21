@@ -1,5 +1,8 @@
 # --------------------------------------------------
-# HYPERDIMENSIONAL COMPUTING IN JULIA: PHAGE-HOST PREDICTIONS
+# PhageHostPredict (Klebsiella)
+#
+# An AI-based Phage-Host interaction predictor framework with receptors and receptor-binding proteins at its core. 
+# This particular PhageHostPredict is for *Klebsiella pneumoniae* related phages.
 #
 # @author: dimiboeckaerts
 # --------------------------------------------------
@@ -11,6 +14,7 @@ using HyperdimensionalComputing
 using DataFrames
 using ProgressMeter
 using CSV
+using JSON
 using FASTX
 using BioAlignments
 using Random
@@ -18,8 +22,9 @@ using Plots
 using StatsBase
 #using Pluto
 
-data_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/klebsiella_RBP_data"
+general_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/Valencia_data" # general directory
 results_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/43_RESULTS/models"
+data_suffix = "Valencia" # choose a suffix for the created data files
 
 
 # FUNCTIONS
@@ -41,24 +46,20 @@ end
 # PhageHostLearning: computing embeddings
 # --------------------------------------------------
 # load data and set names
-IM = DataFrame(CSV.File(data_dir*"/interactions_klebsiella_mono.csv"))
+RBPbase = DataFrame(CSV.File(general_dir*"/RBPbase"*data_suffix*".csv"))
+LociBase = JSON.pasefile(general_dir*"/Locibase"*data_suffix*".json")
+IM = DataFrame(CSV.File(general_dir*"/interactions_mono"*data_suffix*".csv"))
 interaction_matrix = Matrix(IM[1:end, 2:end])
-rbps = DataFrame(CSV.File(data_dir*"/RBPbase_031221_klebsiella_pneumoniae.csv"))
 loci_names = IM.accession
 rbp_names = names(IM)
-
-loci_sequences = Dict(accession=>
-                file_to_array(data_dir*"/kaptive_results_proteins_"*accession*".fasta")
-                for accession in loci_names)
-rbp_sequences = rbps.protein_seq
 
 # define protein alphabet
 alphabet = "GAVLIFPSTYCMKRHWDENQX"
 basis = Dict(c=>BipolarHDV() for c in alphabet)
 
 # compute loci embeddings w/ proteins (multi-instance)
-loci_embeddings = Array{BipolarHDV}(undef, length(loci_sequences))
-for (i, (name, proteins)) in enumerate(loci_sequences)
+loci_embeddings = Array{BipolarHDV}(undef, length(LociBase))
+for (i, (name, proteins)) in enumerate(LociBase)
     # bind within one sequence, then aggregate the different sequences
     protein_hdvs = [sequence_embedding(string(sequence), basis, 3) for sequence in proteins]
     loci_hdv = HyperdimensionalComputing.aggregate(protein_hdvs)
@@ -66,8 +67,8 @@ for (i, (name, proteins)) in enumerate(loci_sequences)
 end
 
 # compute rbp embeddings
-rbp_embeddings = Array{BipolarHDV}(undef, length(rbp_sequences))
-for (i, sequence) in enumerate(rbp_sequences)
+rbp_embeddings = Array{BipolarHDV}(undef, length(RBPbase.ProteinSeq))
+for (i, sequence) in enumerate(RBPbase.ProteinSeq)
     rbp_embeddings[i] = sequence_embedding(string(sequence), basis, 3)
 end
 
@@ -122,7 +123,7 @@ plot!(sort!(dist_neg_test), label="negative test", alpha=0.7)
 Here, we perform a 10-fold CV over the loci, just like we do to evaluate the
 binary classifiers in Python.
 """
-loci_known = [x for x in range(1, length=length(loci_sequences)) 
+loci_known = [x for x in range(1, length=length(LociBase)) 
                 if (any(isequal.(interaction_matrix[x,:], 0))) 
                     || (any(isequal.(interaction_matrix[x,:], 1)))]
 
@@ -206,10 +207,3 @@ a negative (as we have constructed the ration with pos in numerator). Only 0.4% 
 that threshold of 1, so does that make sense? No. Because we would actually expect most
 of the samples (most are negative), to be below 1...
 """
-
-
-# train layer 1
-#layer1 = train(labels, loci_embeddings)
-#retrain!(layer1, labels, loci_embeddings, niters=10)
-
-
