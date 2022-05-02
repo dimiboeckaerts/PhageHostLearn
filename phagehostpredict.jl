@@ -20,6 +20,8 @@ using BioAlignments
 using Random
 using Plots
 using StatsBase
+using MultivariateStats
+using Statistics
 #using Pluto
 
 general_dir = "/Users/dimi/GoogleDrive/PhD/4_PHAGEHOST_LEARNING/42_DATA/Valencia_data" # general directory
@@ -42,16 +44,28 @@ function file_to_array(file)
     return sequences
 end
 
+function mean_reciprocal_rank(queries)
+    """
+    This function computes the mean reciprocal rank for a given array of
+    queries. It deals with relevant vs. non-relevant queries that are
+    binary. E.g.:
+    queries = [[0, 0, 0], [0, 1, 0], [1, 0, 0]]
+    mean_reciprocal_rank(queries) -> 0.5
+    """
+    reciprocal_ranks = [sum(query) > 0 ? 1/argmax(query) : 0 for query in queries]
+    return mean(reciprocal_ranks)
+end
+
 
 # PhageHostLearning: computing embeddings
 # --------------------------------------------------
 # load data and set names
 RBPbase = DataFrame(CSV.File(general_dir*"/RBPbase"*data_suffix*".csv"))
-LociBase = JSON.pasefile(general_dir*"/Locibase"*data_suffix*".json")
+LociBase = JSON.parsefile(general_dir*"/Locibase"*data_suffix*".json")
 IM = DataFrame(CSV.File(general_dir*"/interactions_mono"*data_suffix*".csv"))
 interaction_matrix = Matrix(IM[1:end, 2:end])
 loci_names = IM.accession
-rbp_names = names(IM)
+rbp_names = names(IM)[2:end]
 
 # define protein alphabet
 alphabet = "GAVLIFPSTYCMKRHWDENQX"
@@ -73,9 +87,8 @@ for (i, sequence) in enumerate(RBPbase.ProteinSeq)
 end
 
 
-# PhageHostLearning: first test
+# PhageHostLearning: rbp-receptor signatures (bind)
 # --------------------------------------------------
-# compute rbp-receptor signatures (bind)
 signatures_pos = []
 signatures_neg = []
 for (i, loci_embedding) in enumerate(loci_embeddings)
@@ -91,6 +104,42 @@ signatures_pos = convert(Array{BipolarHDV}, signatures_pos)
 signatures_neg = convert(Array{BipolarHDV}, signatures_neg)
 println("pos: ", length(signatures_pos), " neg: ", length(signatures_neg))
 
+
+# EXPLORATORY PCA
+# --------------------------------------------------
+# RBP embeddings
+rbp_embeddings_flipped = zeros(Int64, 10000, length(RBPbase.ProteinSeq))
+for i in range(1, length=length(RBPbase.ProteinSeq))
+    rbp_embeddings_flipped[:,i] = rbp_embeddings[i]
+end
+
+pca = fit(PCA, rbp_embeddings_flipped, pratio=1, maxoutdim=4)
+proj = projection(pca) # each column is a principal component
+percent_total_variance = principalvars(pca) ./ tvar(pca) * 100
+
+rbp_transformed = MultivariateStats.transform(pca, rbp_embeddings_flipped)
+h = plot(rbp_transformed[1,:], rbp_transformed[2,:], seriestype=:scatter, label="")
+plot!(xlabel="PC1", ylabel="PC2", framestyle=:box)
+
+# Signatures
+len_signatures = length(signatures_pos)+length(signatures_neg)
+signatures_flipped = zeros(Int64, 10000, len_signatures)
+for i in range(1, length=length(signatures_pos))
+    signatures_flipped[:,i] = signatures_pos[i]
+end
+for i in range(1, length=length(signatures_neg))
+    signatures_flipped[:,i+length(signatures_pos)] = signatures_neg[i]
+end
+pca = fit(PCA, signatures_flipped, pratio=1, maxoutdim=4)
+signatures_transformed = MultivariateStats.transform(pca, signatures_flipped)
+h = plot(signatures_transformed[1,1:length(signatures_pos)], signatures_transformed[2,1:length(signatures_pos)], seriestype=:scatter, label="pos")
+plot!(signatures_transformed[1, length(signatures_pos)+1:end], signatures_transformed[2,length(signatures_pos)+1:end], seriestype=:scatter, label="neg")
+plot!(xlabel="PC1", ylabel="PC2", framestyle=:box)
+savefig(h, results_dir*"/HDC_PCA.png")
+
+
+# PhageHostLearning: first test
+# --------------------------------------------------
 # shuffle and split in train-test
 sign_pos = shuffle(signatures_pos)
 sign_neg = shuffle(signatures_neg)
@@ -110,11 +159,13 @@ dist_pos_test = [cos_sim(training_pos_agg, x) for x in testing_pos]
 dist_neg_test = [cos_sim(training_pos_agg, x) for x in testing_neg]
 
 # make plots
-histogram(dist_pos_test, label="positive test", alpha=0.7, legend=:topleft, nbins=40)
+hist = histogram(dist_pos_test, label="positive test", alpha=0.7, legend=:topleft, nbins=40)
 histogram!(dist_neg_test, label="negative test", alpha=0.7, nbins=30)
+savefig(hist, results_dir*"/HDC_histogram.png")
 
-plot(sort!(dist_pos_test), label="positive test", alpha=0.7, legend=:bottomright, xlabel="rank", ylabel="Cosine sim")
+rank_plot = plot(sort!(dist_pos_test), label="positive test", alpha=0.7, legend=:bottomright, xlabel="rank", ylabel="Cosine sim")
 plot!(sort!(dist_neg_test), label="negative test", alpha=0.7)
+savefig(rank_plot, results_dir*"/HDC_rank_plot.png")
 
 
 # PhageHostLearning: cross-validation
@@ -187,11 +238,11 @@ end
 
 # results pos vs. neg
 results = DataFrame(locus=loci_nr, rbps=rbp_nr, scores=scores, label=labels)
-CSV.write(results_dir*"/results_HDC_grouped10CV_alldata.csv", results)
+CSV.write(results_dir*"/results_HDC_grouped10CV_"*data_suffix*".csv", results)
 
 # results pos only
 results = DataFrame(locus=loci_nr, rbps=rbp_nr, scores=scores_pos, label=labels)
-CSV.write(results_dir*"/results_HDCpos_grouped10CV_alldata.csv", results)
+CSV.write(results_dir*"/results_HDCpos_grouped10CV_"*data_suffix*".csv", results)
 
 
 # examine scores
