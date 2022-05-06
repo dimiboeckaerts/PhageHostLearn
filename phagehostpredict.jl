@@ -1,4 +1,6 @@
 # --------------------------------------------------
+# DEPRECATED: see phagehostpredict_hdc notebook!
+#
 # PhageHostPredict (Klebsiella)
 #
 # An AI-based Phage-Host interaction predictor framework with receptors and receptor-binding proteins at its core. 
