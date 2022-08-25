@@ -543,3 +543,25 @@ def cdhit_python(cdhit_path, input_file, output_file, c=0.50, n=3):
     stdout, stderr = process.communicate()
     
     return stdout, stderr
+
+def cdhit_est_python(cdhit_path, input_file, output_file, c=0.90, n=7):
+    """
+    This function executes CD-HIT-EST (DNA sequences) clustering commands from within Python. 
+    To install CD-HIT, do so via conda: conda install -c bioconda cd-hit.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - input_file: FASTA file with protein sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+        - n: word length (7 for thresholds between 0.88 and 0.9, DNA level)
+    """
+    
+    # perform clustering
+    cd_command = 'cd ' + cdhit_path
+    cluster_command = './cd-hit-est -i ' + input_file + ' -o ' + output_file + ' -c ' + str(c) + ' -n ' + str(n) + ' -d 0'
+    command = cd_command + '; ' + cluster_command
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+            
+    return stdout, stderr
