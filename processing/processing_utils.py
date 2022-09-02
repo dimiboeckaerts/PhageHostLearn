@@ -914,3 +914,55 @@ def RBPbase_identifiers(rbp_data, data_dir):
     RBPbase.to_csv(data_dir+rbp_data)
 
     return
+
+def xlsx_database_to_csv(xlsx_file, save_path, index_col=0, header=0, export=True):
+    """
+    This function processes an xlsx file with interactions into a Pandas dataframe
+    that is saved as an .csv file. 
+    
+    Input:
+    * xlsx_file: path to file, file must have a column (index_col) with bacteria names and a 
+        row (header) with phage names.
+    * save_path: file path (and name) to save .csv file
+    * index_col: number of the column in which the bacteria names are (starts at 0! - default)
+    * header: number of the row in which the phage names are (starts at O! - default)
+    * export: whether or not to export to csv, default = true (duh)
+    """
+    IM = pd.read_excel(xlsx_file, index_col=index_col, header=header)
+    #bacteria_names = list(IM.index)
+    #phage_names = list(IM.columns)
+    if export==True:
+        IM.to_csv(save_path+'.csv')
+        return
+    else:
+        return IM
+
+def add_to_database(old_database, new_xlsx_file, save_path, index_col=0, header=0):
+    """
+    This function adds data from a new xlsx file to an already existing database.
+    
+    Input:
+    * old_database: path to csv file of old database (by default index_col and header are 0)
+    * new_xlsx_file: path to file, file must have a column (index_col) with bacteria names and a 
+        row (header) with phage names.
+    * save_path: file path to save .csv file of the NEW MERGED DATABASE
+    * index_col: number of the column in which the bacteria names are (starts at 0! - default)
+    * header: number of the row in which the phage names are (starts at O! - default)
+    """
+    # load old data (first is index_col)
+    old_database = pd.read_csv(old_database, index_col=0)
+    
+    # process new data
+    new_database = xlsx_database_to_csv(new_xlsx_file, '', index_col=0, header=0, export=False)
+    phage_overlap = [phage for phage in list(old_database.columns) if phage in list(new_database.columns)]
+    bacteria_overlap = [bacterium for bacterium in list(old_database.index) if bacterium in list(new_database.index)]
+    if (len(phage_overlap) > 0) or (len(bacteria_overlap) > 0):
+        print('Oops, there seem to be duplicate(s) in the added phages and or bacteria...')
+        print('Phage name duplicates:', phage_overlap)
+        print('Bacteria name duplicates:', bacteria_overlap)
+        return
+    else:
+        # merge and save
+        merged_database = pd.concat([old_database, new_database])
+        merged_database.to_csv(save_path+'.csv')
+        return

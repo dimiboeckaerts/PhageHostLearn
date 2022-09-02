@@ -565,3 +565,51 @@ def cdhit_est_python(cdhit_path, input_file, output_file, c=0.90, n=7):
     stdout, stderr = process.communicate()
             
     return stdout, stderr
+
+def psi_cdhit_python(cdhit_path, input_file, output_file, c=0.30):
+    """
+    This function executes PSI CD-HIT clustering commands from within Python. To install
+    CD-HIT, do so via conda: conda install -c bioconda cd-hit. By default, CD-HIT
+    works via a global alignment approach, which is good for our application as
+    we cut the sequences to 'one unknown domain' beforehand.
+    
+    Input:
+        - cdhit_path: path to CD-HIT software
+        - input_file: FASTA file with protein/DNA sequences
+        - output file: path to output (will be one FASTA file and one .clstr file)
+        - c: threshold on identity for clustering
+    """
+    cd_str = 'cd ' + cdhit_path # change directory
+    raw_str = './psi-cd-hit.pl -i ' + input_file + ' -o ' + output_file + ' -c ' + str(c)
+    command = cd_str+'; '+ raw_str
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    return stdout, stderr
+
+def clustalo_python(clustalo_path, input_file, output_file, out_format='fa'):
+    """
+    This function executes the basic command to run a local Clustal Omega MSA.
+    You need to install Clustal Omega locally first, see http://www.clustal.org/omega/.
+    The basic command is: clustalo -i my-in-seqs.fa -o my-out-seqs.fa -v
+    
+    Dependencies: subprocess
+    
+    Input:
+        - clustalo_path: path to clustalo software
+        - input_file: FASTA file with (protein) sequences
+        - output_file: path to output file for MSA
+        - out_format: format of the output (fa[sta],clu[stal],msf,phy[lip],selex,
+                        st[ockholm],vie[nna]; default: fasta) as string
+        
+    Output: stdout and stderr are the output from the terminal. Results are saved 
+            as given output_file.
+    """
+    
+    cd_str = 'cd ' + clustalo_path # change dir
+    raw_str = './clustalo -i ' + input_file + ' -o ' + output_file + ' -v --outfmt ' + out_format
+    command = cd_str+'; '+ raw_str
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    stdout, stderr = process.communicate()
+    
+    return stdout, stderr
