@@ -713,39 +713,39 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
     return loci_results, serotypes
 
 
-def RBPbase_fasta_processing(rbp_data, data_dir):
-    """
-    This function processes the RBP database from a Pandas DataFrame to individual fasta files that can be
-    looped over to compute protein embeddings.
-
-    Input:
-    - rbp_data: name of the RBP DataFrame (string) in the data_dir, with protein sequences in column 'protein_seq'
-    - data_dir: location of the database and where the fasta files will be stored (string)
-
-    Output:
-    - fasta files of each of the RBP sequences in the database
-    - big fasta file of all sequences together (for pairwise alignments later)
-    """
-    if data_dir != '':
-        data_dir = data_dir+'/'
-
-    rbp_file_names = []
-    RBPbase = pd.read_csv(data_dir+rbp_data)
-    big_fasta = open(data_dir+rbp_data.split('.')[0]+'.fasta', 'w')
-    for i, sequence in enumerate(RBPbase['protein_seq']):
-        unique_id = RBPbase['unique_ID'][i]
-        rbp_file_names.append(unique_id+'.fasta')
-        
-        # write individual fasta
-        fasta = open(data_dir+unique_id+'.fasta', 'w')
-        fasta.write('>'+unique_id+'\n'+sequence+'\n')
-        fasta.close()
-        
-        # write big fasta
-        big_fasta.write('>'+unique_id+'\n'+sequence+'\n')
-    big_fasta.close()
-
-    return rbp_file_names
+#def RBPbase_fasta_processing(rbp_data, data_dir):
+#    """
+#    This function processes the RBP database from a Pandas DataFrame to individual fasta files that can be
+#    looped over to compute protein embeddings.
+#
+#    Input:
+#    - rbp_data: name of the RBP DataFrame (string) in the data_dir, with protein sequences in column 'protein_seq'
+#    - data_dir: location of the database and where the fasta files will be stored (string)
+#
+#    Output:
+#    - fasta files of each of the RBP sequences in the database
+#    - big fasta file of all sequences together (for pairwise alignments later)
+#    """
+#    if data_dir != '':
+#        data_dir = data_dir+'/'
+#
+#    rbp_file_names = []
+#    RBPbase = pd.read_csv(data_dir+rbp_data)
+#    big_fasta = open(data_dir+rbp_data.split('.')[0]+'.fasta', 'w')
+#    for i, sequence in enumerate(RBPbase['protein_seq']):
+#        unique_id = RBPbase['unique_ID'][i]
+#        rbp_file_names.append(unique_id+'.fasta')
+#        
+#        # write individual fasta
+#        fasta = open(data_dir+unique_id+'.fasta', 'w')
+#        fasta.write('>'+unique_id+'\n'+sequence+'\n')
+#        fasta.close()
+#        
+#        # write big fasta
+#        big_fasta.write('>'+unique_id+'\n'+sequence+'\n')
+#    big_fasta.close()
+#
+#    return rbp_file_names
 
 
 def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='6'):
