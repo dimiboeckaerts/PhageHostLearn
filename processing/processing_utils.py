@@ -772,6 +772,20 @@ def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='6'):
     
     return ssout, sserr
 
+def single_pwalign_julia(project_dir, sequence1, sequence2, align_type):
+    """
+    Remark: first run the alias command once in therminal to enable julia from command line!
+    """
+    #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
+    cd_command = 'cd ' + project_dir
+    pw_command = 'julia single_pwalign.jl ' + sequence1 + ' ' + sequence2 + ' ' + align_type
+    command = cd_command + '; ' + pw_command
+
+    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ssout, sserr = ssprocess.communicate()
+    
+    return ssout, sserr
+
 
 def get_kaptive_file_names(klebsiella_genomes):
     """
