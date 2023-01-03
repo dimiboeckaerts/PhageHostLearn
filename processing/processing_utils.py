@@ -695,7 +695,7 @@ def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_dire
         loci_sequence = ''
         for record in SeqIO.parse(output_path+'/kaptive_results_'+file, 'fasta'):
             loci_sequence = loci_sequence + str(record.seq)
-        big_fasta.write('>'+accession+'\n'+loci_sequence+'\n')
+        big_fasta.write('>'+accessions[i]+'\n'+loci_sequence+'\n')
 
         # delete temp kaptive files
         os.remove(file_path+'.ndb')
