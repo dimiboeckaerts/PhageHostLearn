@@ -4,11 +4,11 @@
 # @author: dimiboeckaerts
 # --------------------------------------------------
 
-#push!(LOAD_PATH, "/Users/dimi/Documents/GitHub/HyperdimensionalComputing.jl/src/")
+push!(LOAD_PATH, "./HyperdimensionalComputing/src/")
 using CSV
 using JSON
 using DataFrames
-using ProgressMeter
+using DelimitedFiles
 using HyperdimensionalComputing
 
 function hd_vectorization(sequence, tokens; layers=3, k=(6, 6, 6))
@@ -49,15 +49,14 @@ end
 
 function compute_hdc_rep(args)
     # parse arguments
-    loci_file = args[1] # provide full path to .json dict
-    rbp_file = args[2] # provide full path to .csv pandas df
-    output_file = args[3] # provide full path to file for saving (.txt)
+    general_path = args[1] # provide full path to general data folder
+    data_suffix = args[2] # provide the used data suffix for the data
 
     # load data
     println("Loading data...")
-    LociBase = JSON.parsefile(loci_file)
-    RBPbase =  DataFrame(CSV.File(rbp_file))
-    IM = DataFrame(CSV.File(general_dir*"/phage_host_interactions"*data_suffix*".csv"))
+    LociBase = JSON.parsefile(general_path*"/LociBase"*data_suffix*".json")
+    RBPbase =  DataFrame(CSV.File(general_path*"/RBPbase"*data_suffix*".csv"))
+    IM = DataFrame(CSV.File(general_path*"/phage_host_interactions"*data_suffix*".csv"))
     rename!(IM,:Column1 => :Host)
     interaction_matrix = Matrix(IM[1:end, 2:end])
 
@@ -114,11 +113,11 @@ function compute_hdc_rep(args)
 
     # write output
     full_mat = hcat(pairs, features_b)
-    writedlm(output_file, full_mat)
+    writedlm(general_path*"/hdc_features"*data_suffix*".txt", full_mat)
     println("Done!")
 end
 
-pwalign(ARGS)
+compute_hdc_rep(ARGS)
 
 # test
 #pwalign(["/Users/Dimi/Desktop/kaptive_test.fasta", "DNA"])

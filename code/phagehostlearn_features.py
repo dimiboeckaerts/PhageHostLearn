@@ -53,9 +53,10 @@ def compute_esm2_embeddings_rbp(general_path, data_suffix=''):
     bar.close()
 
     # save results
+    phage_ids = RBPbase['phage_ID']
     ids = RBPbase['protein_ID']
-    embeddings_df = pd.concat([pd.DataFrame({'protein_ID':ids}), pd.DataFrame(sequence_representations).astype('float')], axis=1)
-    embeddings_df.to_csv('esm2_embeddings_rbp'+data_suffix+'.csv', index=False)
+    embeddings_df = pd.concat([pd.DataFrame({'phage_ID':phage_ids}), pd.DataFrame({'protein_ID':ids}), pd.DataFrame(sequence_representations).astype('float')], axis=1)
+    embeddings_df.to_csv(general_path+'/esm2_embeddings_rbp'+data_suffix+'.csv', index=False)
     return
 
 
@@ -94,7 +95,7 @@ def compute_esm2_embeddings_loci(general_path, data_suffix=''):
 
     # save results
     embeddings_df = pd.concat([pd.DataFrame({'accession':list(loci_dict.keys())}), pd.DataFrame(loci_representations)], axis=1)
-    embeddings_df.to_csv('esm2_embeddings_loci'+data_suffix+'.csv', index=False)
+    embeddings_df.to_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv', index=False)
 
 
 def compute_hdc_embedding(general_path, data_suffix=''):
@@ -108,13 +109,10 @@ def compute_hdc_embedding(general_path, data_suffix=''):
     REMARK: first run the alias command once in therminal to enable julia from command line!
     """
     #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
-    loci_file = general_path+'/Locibase'+data_suffix+'.json'
-    rbp_file = general_path+'/RBPbase'+data_suffix+'.csv'
-    output_file = general_path+'/hdc_features'+data_suffix+'.txt'
-    command = 'julia compute_hdc_rep.jl ' + loci_file + ' ' + rbp_file + ' ' + output_file
+    command = 'julia compute_hdc_rep.jl ' + general_path + ' ' + data_suffix
     ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     ssout, sserr = ssprocess.communicate()
-    return ssout, sserr
+    return
 
 
 def construct_feature_matrices(general_path, data_suffix=''):

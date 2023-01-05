@@ -19,7 +19,7 @@ from Bio.SearchIO import HmmerIO
 from tqdm.notebook import tqdm
 from os import listdir
 from xgboost import XGBClassifier
-from bio_embeddings.embed import ProtTransBertBFDEmbedder
+#from bio_embeddings.embed import ProtTransBertBFDEmbedder
 
 
 # 1 - FUNCTIONS
@@ -128,6 +128,9 @@ def gene_domain_scan(hmmpath, pfam_file, gene_hits, threshold=18):
         
     # fetch domains with hmmscan
     domains, scores, biases, ranges = hmmscan_python(hmmpath, pfam_file, 'protein_hits.fasta', threshold)
+
+    # remove last temp fasta file
+    os.remove('protein_hits.fasta')
     
     return domains, scores, biases, ranges
 
@@ -146,10 +149,10 @@ def kaptive_python(kaptive_directory, database_path, file_path, output_path):
     Output:
     - a single fasta file of the locus (single piece or multiple ones) per genome
     """
-    cd_command = 'cd ' + kaptive_directory
+    #cd_command = 'cd ' + kaptive_directory
     
-    kaptive_command = 'python kaptive.py -a ' + file_path + ' -k ' + database_path + ' -o ' + output_path + '/ --no_table'
-    command = cd_command + '; ' + kaptive_command
+    command = 'python kaptive.py -a ' + file_path + ' -k ' + database_path + ' -o ' + output_path + '/ --no_table'
+    #command = cd_command + '; ' + kaptive_command
     ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     ssout, sserr = ssprocess.communicate()
     
@@ -245,7 +248,7 @@ def xlsx_database_to_csv(xlsx_file, save_path, index_col=0, header=0, export=Tru
         return IM
     
 
-def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_suffix=''):
+def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_suffix='', test=False):
     """
     This function loops over the genomes in the phage genomes folder and processed those to
     genes with PHANOTATE.
@@ -255,6 +258,7 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
     - phage genomes path to the folder containing the phage genomes as separate FASTA files
     - phanotate path to the phanotate.py file
     - data suffix to add to the phage_genes.csv file from PHANOTATE (default='')
+    - test: bool whether or not we want to test the function.
     OUTPUT: phage_genes.csv containing all the phage genes.
     """
     phage_files = listdir(phage_genomes_path)
@@ -302,7 +306,10 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
         # update progress
         bar.update(1)
     bar.close()
-    os.remove(general_path+'/phage_results.tsv')
+
+    # remove .tsv file if we're not in test mode
+    if test == False:
+        os.remove(general_path+'/phage_results.tsv')
 
     # Export final genes database
     genebase = pd.DataFrame(list(zip(name_list, gene_ids, gene_list)), columns=['phage_ID', 'gene_ID', 'gene_sequence'])
@@ -310,19 +317,19 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
     return
 
 
-def compute_protein_embeddings(general_path, data_suffix=''):
-    """
-    This function computes protein embeddings -> SLOW ON CPU! Alternatively, can be done
-    in the cloud, using the separate notebook (compute_embeddings_cloud).
-    """
-    genebase = pd.read_csv(general_path+'/phage_genes'+data_suffix+'.csv')
-    embedder = ProtTransBertBFDEmbedder()
-    names = list(genebase['gene_ID'])
-    sequences = [str(Seq(sequence).translate())[:-1] for sequence in genebase['gene_sequence']]
-    embeddings = [embedder.reduce_per_protein(embedder.embed(sequence)) for sequence in tqdm(sequences)]
-    embeddings_df = pd.concat([pd.DataFrame({'ID':names}), pd.DataFrame(embeddings)], axis=1)
-    embeddings_df.to_csv(general_path+'/phage_protein_embeddings'+data_suffix+'.csv', index=False)
-    return
+# def compute_protein_embeddings(general_path, data_suffix=''):
+#     """
+#     This function computes protein embeddings -> SLOW ON CPU! Alternatively, can be done
+#     in the cloud, using the separate notebook (compute_embeddings_cloud).
+#     """
+#     genebase = pd.read_csv(general_path+'/phage_genes'+data_suffix+'.csv')
+#     embedder = ProtTransBertBFDEmbedder()
+#     names = list(genebase['gene_ID'])
+#     sequences = [str(Seq(sequence).translate())[:-1] for sequence in genebase['gene_sequence']]
+#     embeddings = [embedder.reduce_per_protein(embedder.embed(sequence)) for sequence in tqdm(sequences)]
+#     embeddings_df = pd.concat([pd.DataFrame({'ID':names}), pd.DataFrame(embeddings)], axis=1)
+#     embeddings_df.to_csv(general_path+'/phage_protein_embeddings'+data_suffix+'.csv', index=False)
+#     return
 
 
 def phageRBPdetect(general_path, pfam_path, hmmer_path, xgb_path, gene_embeddings_path, data_suffix=''):
@@ -367,7 +374,7 @@ def phageRBPdetect(general_path, pfam_path, hmmer_path, xgb_path, gene_embedding
     phage_ids = genebase['phage_ID']
 
     hmm_scores = {item:[0]*len(phage_genes) for item in new_blocks}
-    bar = tqdm(total=len(phage_genes), desc='Scanning the genes', position=0, leave=True)
+    bar = tqdm(total=len(phage_genes), position=0, leave=True)
     for i, sequence in enumerate(phage_genes):
         hits, scores, biases, ranges = gene_domain_scan(hmmer_path, pfam_path, [sequence])
         for j, dom in enumerate(hits):
