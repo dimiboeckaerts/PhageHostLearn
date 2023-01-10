@@ -15,29 +15,6 @@ import numpy as np
 
 # 1 - FUNCTIONS
 # --------------------------------------------------
-def compute_hdc_representation(julia_file, loci_file, rbp_file, output_file):
-    """
-    Computes joint hyperdimensional representations for loci proteins and RBPs in Julia.
-    
-    Input:
-    - julia_file: path to compute_hdc_rep.jl
-    - loci_file: path to LociBase dictionary (as .json)
-    - rbp_file: path to RBPbase dataframe (as .csv)
-    - output_file: path for saving the resulting feature matrix (.txt)
-    Output: feature matrix for machine learning
-    
-    Remark: first run the alias command once in therminal to enable julia from command line!
-    """
-    #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
-    cd_command = 'cd ' + julia_file
-    pw_command = 'julia compute_hdc_rep.jl ' + loci_file + ' ' + rbp_file + ' ' + output_file
-    command = cd_command + '; ' + pw_command
-
-    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    ssout, sserr = ssprocess.communicate()
-    
-    return ssout, sserr
-
 def mean_reciprocal_rank(queries):
     """
     This function computes the mean reciprocal rank for a given array or

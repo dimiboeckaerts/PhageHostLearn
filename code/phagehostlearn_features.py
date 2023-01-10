@@ -98,38 +98,45 @@ def compute_esm2_embeddings_loci(general_path, data_suffix=''):
     embeddings_df.to_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv', index=False)
 
 
-def compute_hdc_embedding(general_path, data_suffix=''):
+def compute_hdc_embedding(path, suffix, locibase_path, rbpbase_path, mode='train'):
     """
     Computes joint hyperdimensional representations for loci proteins and RBPs in Julia.
     
     INPUTS:
-    - general path to the project data folder
-    - data suffix to optionally add to the saved file name (default='')
+    - path: general or test path depending on the mode
+    - suffix: general or test suffix depending on the mode
+    - locibase path to the locibase json file
+    - rbpbase path to the rbpbase file
+    - mode: 'train' or 'test', test mode doesn't use an IM (default='train')
     OUTPUT: hdc_features.txt
     REMARK: first run the alias command once in therminal to enable julia from command line!
     """
     #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
-    command = 'julia compute_hdc_rep.jl ' + general_path + ' ' + data_suffix
+    command = 'julia compute_hdc_rep.jl ' + path + ' ' + suffix + ' ' + locibase_path + ' ' + rbpbase_path + ' ' + mode
     ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     ssout, sserr = ssprocess.communicate()
     return
 
 
-def construct_feature_matrices(general_path, data_suffix=''):
+def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_path, hdcembeddings_path, mode='train'):
     """
     This function constructs two corresponding feature matrices ready for machine learning, 
     starting from the ESM-2 embeddings & the HDC embeddings of RBPs and loci proteins.
 
     INPUTS:
-    - general path to the project data folder
-    - data suffix to optionally add to the saved file name (default='')
+    - path: general or test path depending on the mode
+    - suffix: general or test suffix depending on the mode
+    - lociembeddings path to the loci embeddings csv file
+    - rbpembeddings path to the rbp embeddings csv file
+    - mode: 'train' or 'test', test mode doesn't use an IM (default='train')
     OUTPUT: features_esm2, features_hdc, labels, groups_loci, groups_phage
     """
-    RBP_embeddings = pd.read_csv(general_path+'/esm2_embeddings_rbp'+data_suffix+'.csv')
-    loci_embeddings = pd.read_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv')
-    interactions = pd.read_csv(general_path+'/phage_host_interactions'+data_suffix+'.csv', index_col=0)
-    hdc_embeddings = pd.read_csv(general_path+'/hdc_features'+data_suffix+'.txt', sep="\t", header=None)
+    RBP_embeddings = pd.read_csv(rbpembeddings_path)
+    loci_embeddings = pd.read_csv(lociembeddings_path)
+    hdc_embeddings = pd.read_csv(hdcembeddings_path, sep="\t", header=None)
     pairs = [ast.literal_eval(i) for i in hdc_embeddings.iloc[:,0]]
+    if mode == 'train':
+        interactions = pd.read_csv(path+'/phage_host_interactions'+suffix+'.csv', index_col=0)
 
     # construct multi-RBP representations
     multi_embeddings = []
@@ -150,8 +157,22 @@ def construct_feature_matrices(general_path, data_suffix=''):
 
     for i, accession in enumerate(loci_embeddings['accession']):
         for j, phage_id in enumerate(multiRBP_embeddings['phage_ID']):
-            interaction = interactions.loc[accession][phage_id]
-            if math.isnan(interaction) == False: # if the interaction is known
+            if mode == 'train':
+                interaction = interactions.loc[accession][phage_id]
+                if math.isnan(interaction) == False: # if the interaction is known
+                    # language embeddings
+                    features_lan.append(pd.concat([loci_embeddings.iloc[i, 1:], multiRBP_embeddings.iloc[j, 1:]]))
+                    
+                    # hdc embeddings reorder
+                    pair = (accession, phage_id)
+                    this_index = pairs.index(pair)
+                    features_hdc.append(hdc_embeddings.iloc[this_index, 1:])
+                    
+                    # append labels and groups
+                    labels.append(int(interaction))
+                    groups_loci.append(i)
+                    groups_phage.append(j)
+            elif mode == 'test':
                 # language embeddings
                 features_lan.append(pd.concat([loci_embeddings.iloc[i, 1:], multiRBP_embeddings.iloc[j, 1:]]))
                 
@@ -159,11 +180,11 @@ def construct_feature_matrices(general_path, data_suffix=''):
                 pair = (accession, phage_id)
                 this_index = pairs.index(pair)
                 features_hdc.append(hdc_embeddings.iloc[this_index, 1:])
-                
-                # append labels and groups
-                labels.append(int(interaction))
+
+                # append groups
                 groups_loci.append(i)
                 groups_phage.append(j)
+
                 
     features_lan = np.asarray(features_lan)
     features_hdc = np.asarray(features_hdc)
@@ -171,4 +192,7 @@ def construct_feature_matrices(general_path, data_suffix=''):
     print("Dimensions match?", features_lan.shape[0] == features_hdc.shape[0])
 
     #np.save(general_path+'/esm2_features'+data_suffix+'.txt', features_lan)
-    return features_lan, features_hdc, labels, groups_loci, groups_phage
+    if mode == 'train':
+        return features_lan, features_hdc, labels, groups_loci, groups_phage
+    elif mode == 'test':
+        return features_lan, features_hdc, groups_loci

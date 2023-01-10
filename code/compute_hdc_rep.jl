@@ -49,16 +49,21 @@ end
 
 function compute_hdc_rep(args)
     # parse arguments
-    general_path = args[1] # provide full path to general data folder
-    data_suffix = args[2] # provide the used data suffix for the data
+    path = args[1] # general or test path depending on the mode
+    suffix = args[2] # general or test suffix depending on the mode
+    locibase_path = args[3] # provide full path to general data folder
+    rbpbase_path = args[4] # provide the used data suffix for the data
+    mode = args[5] # 'train' or 'test'. Test mode doesn't use an IM.
 
     # load data
     println("Loading data...")
-    LociBase = JSON.parsefile(general_path*"/LociBase"*data_suffix*".json")
-    RBPbase =  DataFrame(CSV.File(general_path*"/RBPbase"*data_suffix*".csv"))
-    IM = DataFrame(CSV.File(general_path*"/phage_host_interactions"*data_suffix*".csv"))
-    rename!(IM,:Column1 => :Host)
-    interaction_matrix = Matrix(IM[1:end, 2:end])
+    LociBase = JSON.parsefile(locibase_path)
+    RBPbase =  DataFrame(CSV.File(rbpbase_path))
+    if mode == "train"
+        IM = DataFrame(CSV.File(path*"/phage_host_interactions"*suffix*".csv"))
+        rename!(IM,:Column1 => :Host)
+        interaction_matrix = Matrix(IM[1:end, 2:end])
+    end
 
     # create alphabet
     alphabet = "GAVLIFPSTYCMKRHWDENQX"
@@ -86,18 +91,24 @@ function compute_hdc_rep(args)
 
     # compute sigatures for loci x RBP embeddings by BINDING
     features_bind = []
-    labels = []
     groups_loci = []
     groups_phage = []
     pairs = []
     for (i, accession) in enumerate(collect(keys(LociBase)))
         for (j, phage_id) in enumerate(unique(RBPbase.phage_ID))
-            subset = filter(row -> row.Host == accession, IM)
-            interaction = subset[!, phage_id][1]
-            if isequal(interaction, 1) || isequal(interaction, 0)
+            if mode == "train" # only compute sigs for known interactions
+                subset = filter(row -> row.Host == accession, IM)
+                interaction = subset[!, phage_id][1]
+                if isequal(interaction, 1) || isequal(interaction, 0)
+                    signature = HyperdimensionalComputing.bind([loci_embeddings[i], rbp_embeddings[j]])
+                    push!(features_bind, signature)
+                    push!(groups_loci, i)
+                    push!(groups_phage, j)
+                    push!(pairs, (accession, phage_id))
+                end
+            elseif mode == "test" # compute all signatures
                 signature = HyperdimensionalComputing.bind([loci_embeddings[i], rbp_embeddings[j]])
                 push!(features_bind, signature)
-                push!(labels, trunc(Int, interaction))
                 push!(groups_loci, i)
                 push!(groups_phage, j)
                 push!(pairs, (accession, phage_id))
@@ -113,7 +124,7 @@ function compute_hdc_rep(args)
 
     # write output
     full_mat = hcat(pairs, features_b)
-    writedlm(general_path*"/hdc_features"*data_suffix*".txt", full_mat)
+    writedlm(path*"/hdc_features"*suffix*".txt", full_mat)
     println("Done!")
 end
 
