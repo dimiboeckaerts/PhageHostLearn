@@ -11,7 +11,7 @@ using DataFrames
 using DelimitedFiles
 using HyperdimensionalComputing
 
-function hd_vectorization(sequence, tokens; layers=3, k=(6, 6, 6))
+function hd_vectorization(sequence, tokens; layers=2, k=(6, 6))
     """
     Convolutional sequence vectorization with hyperdimensional vectors.
     

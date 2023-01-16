@@ -135,7 +135,7 @@ def gene_domain_scan(hmmpath, pfam_file, gene_hits, threshold=18):
     return domains, scores, biases, ranges
 
 
-def kaptive_python(kaptive_directory, database_path, file_path, output_path):
+def kaptive_python(database_path, file_path, output_path):
     """
     This function is a wrapper for the Kaptive Python file to be executed from another Python script.
     This wrapper runs on a single FASTA file (one genome) and also produces a single FASTA file.
@@ -159,72 +159,6 @@ def kaptive_python(kaptive_directory, database_path, file_path, output_path):
     return ssout, sserr
 
 
-def compute_kaptive_from_directory(kaptive_directory, database_path, fastas_directory, output_path):
-    """
-    Computes Kaptive for each FASTA in a given directory.
-    
-    Input:
-    - kaptive_path: path to kaptive.py
-    - database_path: path (string) to the database (.gbk file)
-    - fastas_directory: path (string) to the files (FASTA)
-    - output_path: path for output
-    
-    Output:
-    - json file of dictionary {accession1: [protein1, protein2, ...], ...}
-    """
-    # get fasta files
-    fastas = os.listdir(fastas_directory)
-    try:
-        fastas.remove('.DS_Store')
-    except:
-        pass
-    
-    accessions = [file.split('.fasta')[0] for file in fastas]
-    serotypes = []
-    loci_results = {}
-    pbar = tqdm(total=len(fastas))
-    big_fasta = open(output_path+'/kaptive_results_all_loci.fasta', 'w')
-    for i, file in enumerate(fastas):
-        # run kaptive
-        file_path = fastas_directory+'/'+file
-        out, err = kaptive_python(kaptive_directory, database_path, file_path, output_path)
-        
-        # process json -> proteins in dictionary
-        results = json.load(open(output_path+'/kaptive_results.json'))
-        serotypes.append(results[0]['Best match']['Type'])
-        for gene in results[0]['Locus genes']:
-            try:
-                name = gene['Reference']['Product']
-            except KeyError:
-                name = 'unknown'
-            protein = gene['Reference']['Protein sequence']
-            if accessions[i] in list(loci_results.keys()):
-                loci_results[accessions[i]].append(protein[:-1])
-            else:
-                loci_results[accessions[i]] = [protein[:-1]]
-
-        # write big fasta file with loci
-        loci_sequence = ''
-        for record in SeqIO.parse(output_path+'/kaptive_results_'+file, 'fasta'):
-            loci_sequence = loci_sequence + str(record.seq)
-        big_fasta.write('>'+accessions[i]+'\n'+loci_sequence+'\n')
-
-        # delete temp kaptive files
-        os.remove(file_path+'.ndb')
-        os.remove(file_path+'.not')
-        os.remove(file_path+'.ntf')
-        os.remove(file_path+'.nto')
-        os.remove(output_path+'/kaptive_results.json')
-        os.remove(output_path+'/kaptive_results_'+file)
-
-        # update progress
-        pbar.update(1)
-    pbar.close()
-    big_fasta.close()
-    
-    return loci_results, serotypes
-
-
 def xlsx_database_to_csv(xlsx_file, save_path, index_col=0, header=0, export=True):
     """
     This function processes an xlsx file with interactions into a Pandas dataframe
@@ -246,9 +180,40 @@ def xlsx_database_to_csv(xlsx_file, save_path, index_col=0, header=0, export=Tru
         return
     else:
         return IM
+
+
+def add_to_database(old_database, new_xlsx_file, save_path, index_col=0, header=0):
+    """
+    This function adds data from a new xlsx file to an already existing database.
+    
+    Input:
+    * old_database: path to csv file of old database (by default index_col and header are 0)
+    * new_xlsx_file: path to file, file must have a column (index_col) with bacteria names and a 
+        row (header) with phage names.
+    * save_path: file path to save .csv file of the NEW MERGED DATABASE
+    * index_col: number of the column in which the bacteria names are (starts at 0! - default)
+    * header: number of the row in which the phage names are (starts at O! - default)
+    """
+    # load old data (first is index_col)
+    old_database = pd.read_csv(old_database, index_col=0)
+    
+    # process new data
+    new_database = xlsx_database_to_csv(new_xlsx_file, '', index_col=0, header=0, export=False)
+    phage_overlap = [phage for phage in list(old_database.columns) if phage in list(new_database.columns)]
+    bacteria_overlap = [bacterium for bacterium in list(old_database.index) if bacterium in list(new_database.index)]
+    if (len(phage_overlap) > 0) or (len(bacteria_overlap) > 0):
+        print('Oops, there seem to be duplicate(s) in the added phages and or bacteria...')
+        print('Phage name duplicates:', phage_overlap)
+        print('Bacteria name duplicates:', bacteria_overlap)
+        return
+    else:
+        # merge and save
+        merged_database = pd.concat([old_database, new_database])
+        merged_database.to_csv(save_path+'.csv')
+        return
     
 
-def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_suffix='', test=False):
+def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_suffix='', add=False, test=False):
     """
     This function loops over the genomes in the phage genomes folder and processed those to
     genes with PHANOTATE.
@@ -258,12 +223,17 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
     - phage genomes path to the folder containing the phage genomes as separate FASTA files
     - phanotate path to the phanotate.py file
     - data suffix to add to the phage_genes.csv file from PHANOTATE (default='')
-    - test: bool whether or not we want to test the function.
+    - add: bool whether or not we are just adding new data or processing from scratch (default=False)
+    - test: bool whether or not we want to test the function (default=False)
     OUTPUT: phage_genes.csv containing all the phage genes.
     """
     phage_files = listdir(phage_genomes_path)
     phage_files.remove('.DS_Store')
-    #record = SeqIO.read(phages_dir+'/'+phage_files[0], 'fasta')
+    if add == True:
+        RBPbase = pd.read_csv(general_path+'/RBPbase'+data_suffix+'.csv')
+        phage_ids = list(set(RBPbase['phage_ID']))
+        phage_files = [x for x in phage_files if x.split('.fasta')[0] not in phage_ids]
+        print('Processing ', len(phage_files), ' more phages (add=True)')
     bar = tqdm(total=len(phage_files), position=0, leave=True)
     name_list = []; gene_list = []; gene_ids = []
 
@@ -313,21 +283,36 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
 
     # Export final genes database
     genebase = pd.DataFrame(list(zip(name_list, gene_ids, gene_list)), columns=['phage_ID', 'gene_ID', 'gene_sequence'])
+    if add == True:
+        old_genebase = pd.read_csv(general_path+'/phage_genes'+data_suffix+'.csv')
+        genebase = pd.concat([old_genebase, genebase], axis=0)
     genebase.to_csv(general_path+'/phage_genes'+data_suffix+'.csv', index=False)
     return
 
 
-# def compute_protein_embeddings(general_path, data_suffix=''):
+# def compute_protein_embeddings(general_path, data_suffix='', add=False):
 #     """
 #     This function computes protein embeddings -> SLOW ON CPU! Alternatively, can be done
 #     in the cloud, using the separate notebook (compute_embeddings_cloud).
 #     """
 #     genebase = pd.read_csv(general_path+'/phage_genes'+data_suffix+'.csv')
 #     embedder = ProtTransBertBFDEmbedder()
-#     names = list(genebase['gene_ID'])
-#     sequences = [str(Seq(sequence).translate())[:-1] for sequence in genebase['gene_sequence']]
+#     if add == True:
+#         old_embeddings_df = pd.read_csv(general_path+'/phage_protein_embeddings'+data_suffix+'.csv')
+#         protein_ids = list(old_embeddings_df['ID'])
+#         sequences = []; names = []
+#         for i, sequence in enumerate(genebase['gene_sequence']):
+#             if genebase['gene_ID'][i] not in protein_ids:
+#                 sequences.append(str(Seq(sequence).translate())[:-1])
+#                 names.append(genebase['gene_ID'][i])
+#     else:
+#         names = list(genebase['gene_ID'])
+#         sequences = [str(Seq(sequence).translate())[:-1] for sequence in genebase['gene_sequence']]
+    
 #     embeddings = [embedder.reduce_per_protein(embedder.embed(sequence)) for sequence in tqdm(sequences)]
 #     embeddings_df = pd.concat([pd.DataFrame({'ID':names}), pd.DataFrame(embeddings)], axis=1)
+#     if add == True:
+#         embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
 #     embeddings_df.to_csv(general_path+'/phage_protein_embeddings'+data_suffix+'.csv', index=False)
 #     return
 
@@ -416,7 +401,7 @@ def phageRBPdetect(general_path, pfam_path, hmmer_path, xgb_path, gene_embedding
     return
 
 
-def process_bacterial_genomes(general_path, bact_genomes_path, database_path, kaptive_path, data_suffix=''):
+def process_bacterial_genomes(general_path, bact_genomes_path, database_path, data_suffix='', add=False):
     """
     This function processes the bacterial genomes with Kaptive, into a dictionary of K-locus proteins.
 
@@ -424,14 +409,77 @@ def process_bacterial_genomes(general_path, bact_genomes_path, database_path, ka
     - general path of the PhageHostLearn framework and data
     - bact genomes path to the folder of the bacterial genomes as individual FASTA files
     - database path to the Kaptive K-locus reference database (.gbk)
-    - kaptive path to the kaptive.py file
     - data suffix corresponding to the PHANOTATE output, can be used to designate a test set for example (default='')
+    - add: bool whether or not we are just adding new data or processing from scratch (default=False)
     OUTPUT: Locibase.json containing all the K-locus proteins for each bacterium.
+    REMARK: only downside here is that the big fasta file gets overwritten.
     """
-    Locibase, seros = compute_kaptive_from_directory(kaptive_path, database_path, bact_genomes_path, general_path)
-    pd.DataFrame(seros, columns=['sero']).to_csv(general_path+'/serotypes'+data_suffix+'.csv', index=False)
+    # get fasta files
+    fastas = listdir(bact_genomes_path)
+    try:
+        fastas.remove('.DS_Store')
+    except:
+        pass
+    if add == True:
+        dict_file = open(general_path+'/Locibase'+data_suffix+'.json')
+        old_locibase = json.load(dict_file)
+        loci_accessions = list(old_locibase.keys())
+        fastas = [x for x in fastas if x.split('.fasta')[0] not in loci_accessions]
+        print('Processing ', len(fastas), ' more bacteria (add=True)')
+
+    # run Kaptive
+    accessions = [file.split('.fasta')[0] for file in fastas]
+    serotypes = []
+    loci_results = {}
+    pbar = tqdm(total=len(fastas))
+    big_fasta = open(general_path+'/kaptive_results_all_loci.fasta', 'w')
+    for i, file in enumerate(fastas):
+        # kaptive
+        file_path = bact_genomes_path+'/'+file
+        out, err = kaptive_python(database_path, file_path, general_path)
+        
+        # process json -> proteins in dictionary
+        results = json.load(open(general_path+'/kaptive_results.json'))
+        serotypes.append(results[0]['Best match']['Type'])
+        for gene in results[0]['Locus genes']:
+            #try:
+            #    name = gene['Reference']['Product']
+            #except KeyError:
+            #    name = 'unknown'
+            protein = gene['Reference']['Protein sequence']
+            if accessions[i] in list(loci_results.keys()):
+                loci_results[accessions[i]].append(protein[:-1])
+            else:
+                loci_results[accessions[i]] = [protein[:-1]]
+
+        # write big fasta file with loci
+        loci_sequence = ''
+        for record in SeqIO.parse(general_path+'/kaptive_results_'+file, 'fasta'):
+            loci_sequence = loci_sequence + str(record.seq)
+        big_fasta.write('>'+accessions[i]+'\n'+loci_sequence+'\n')
+
+        # delete temp kaptive files
+        os.remove(file_path+'.ndb')
+        os.remove(file_path+'.not')
+        os.remove(file_path+'.ntf')
+        os.remove(file_path+'.nto')
+        os.remove(general_path+'/kaptive_results.json')
+        os.remove(general_path+'/kaptive_results_'+file)
+
+        # update progress
+        pbar.update(1)
+    pbar.close()
+    big_fasta.close()
+
+    # save to dictionary in .json file
+    sero_df = pd.DataFrame(serotypes, columns=['sero'])
+    if add == True:
+        loci_results = {**old_locibase, **loci_results}
+        old_seros = pd.read_csv(general_path+'/serotypes'+data_suffix+'.csv')
+        sero_df = pd.concat([old_seros, sero_df], axis=0)
+    sero_df.to_csv(general_path+'/serotypes'+data_suffix+'.csv', index=False)
     dict_file = open(general_path+'/Locibase'+data_suffix+'.json', 'w')
-    json.dump(Locibase, dict_file)
+    json.dump(loci_results, dict_file)
     dict_file.close()
     return
 
@@ -465,8 +513,8 @@ def process_data(general_path, phage_genomes_path, bact_genomes_path, phanotate_
     phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_suffix=data_suffix)
 
     # compute phage protein embeddings
-    print('Computing protein embeddings... (this can take a while on a CPU)')
-    compute_protein_embeddings(general_path, data_suffix=data_suffix)
+    #print('Computing protein embeddings... (this can take a while on a CPU)')
+    #compute_protein_embeddings(general_path, data_suffix=data_suffix)
 
     # detect phage RBPs
     print('Detecting RBPs with PhageRBPdetect...')
