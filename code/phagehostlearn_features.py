@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 # 1 - FUNCTIONS
 # --------------------------------------------------
-def compute_esm2_embeddings_rbp(general_path, data_suffix=''):
+def compute_esm2_embeddings_rbp(general_path, data_suffix='', add=False):
     """
     This function computes ESM-2 embeddings for the RBPs, from the RBPbase.csv file.
 
@@ -37,10 +37,19 @@ def compute_esm2_embeddings_rbp(general_path, data_suffix=''):
     batch_converter = alphabet.get_batch_converter()
     model.eval()  # disables dropout for deterministic results
 
-    # loop over data and embed (batch size = 1)
-    sequence_representations = []
+    # get the correct data to embed
     RBPbase = pd.read_csv(general_path+'/RBPbase'+data_suffix+'.csv')
+    if add == True:
+        old_embeddings_df = pd.read_csv(general_path+'/esm2_embeddings_rbp'+data_suffix+'.csv')
+        protein_ids = list(set(old_embeddings_df['protein_ID']))
+        to_delete = [i for i, prot_id in enumerate(RBPbase['protein_ID']) if prot_id in protein_ids]
+        RBPbase = RBPbase.drop(to_delete)
+        RBPbase = RBPbase.reset_index(drop=True)
+        print('Processing ', len(RBPbase['protein_sequence']), ' more sequences (add=True)')
+
+    # loop over data and embed (batch size = 1)
     bar = tqdm(total=len(RBPbase['protein_sequence']), position=0, leave=True)
+    sequence_representations = []
     for i, sequence in enumerate(RBPbase['protein_sequence']):
         data = [(RBPbase['protein_ID'][i], sequence)]
         batch_labels, batch_strs, batch_tokens = batch_converter(data)
@@ -56,11 +65,13 @@ def compute_esm2_embeddings_rbp(general_path, data_suffix=''):
     phage_ids = RBPbase['phage_ID']
     ids = RBPbase['protein_ID']
     embeddings_df = pd.concat([pd.DataFrame({'phage_ID':phage_ids}), pd.DataFrame({'protein_ID':ids}), pd.DataFrame(sequence_representations).astype('float')], axis=1)
+    if add == True:
+        embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
     embeddings_df.to_csv(general_path+'/esm2_embeddings_rbp'+data_suffix+'.csv', index=False)
     return
 
 
-def compute_esm2_embeddings_loci(general_path, data_suffix=''):
+def compute_esm2_embeddings_loci(general_path, data_suffix='', add=False):
     """
     This function computes ESM-2 embeddings for the loci proteins, from the Locibase.json file.
 
@@ -77,6 +88,13 @@ def compute_esm2_embeddings_loci(general_path, data_suffix=''):
     # Load json file
     dict_file = open(general_path+'/Locibase'+data_suffix+'.json')
     loci_dict = json.load(dict_file)
+    if add == True:
+        old_embeddings_df = pd.read_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv')
+        old_accessions = list(set(old_embeddings_df['accession']))
+        for key in loci_dict.keys():
+            if key in old_accessions:
+                del loci_dict[key]
+        print('Processing ', len(loci_dict.keys()), ' more bacteria (add=True)')
 
     # loop over data and embed (batch size = 1)
     loci_representations = []
@@ -95,6 +113,8 @@ def compute_esm2_embeddings_loci(general_path, data_suffix=''):
 
     # save results
     embeddings_df = pd.concat([pd.DataFrame({'accession':list(loci_dict.keys())}), pd.DataFrame(loci_representations)], axis=1)
+    if add == True:
+        embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
     embeddings_df.to_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv', index=False)
 
 

@@ -198,7 +198,7 @@ def add_to_database(old_database, new_xlsx_file, save_path, index_col=0, header=
     old_database = pd.read_csv(old_database, index_col=0)
     
     # process new data
-    new_database = xlsx_database_to_csv(new_xlsx_file, '', index_col=0, header=0, export=False)
+    new_database = xlsx_database_to_csv(new_xlsx_file, '', index_col=index_col, header=header, export=False)
     phage_overlap = [phage for phage in list(old_database.columns) if phage in list(new_database.columns)]
     bacteria_overlap = [bacterium for bacterium in list(old_database.index) if bacterium in list(new_database.index)]
     if (len(phage_overlap) > 0) or (len(bacteria_overlap) > 0):
