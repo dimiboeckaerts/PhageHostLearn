@@ -66,7 +66,7 @@ def compute_esm2_embeddings_rbp(general_path, data_suffix='', add=False):
     ids = RBPbase['protein_ID']
     embeddings_df = pd.concat([pd.DataFrame({'phage_ID':phage_ids}), pd.DataFrame({'protein_ID':ids}), pd.DataFrame(sequence_representations).astype('float')], axis=1)
     if add == True:
-        embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
+        embeddings_df = pd.DataFrame(np.vstack([old_embeddings_df, embeddings_df]), columns=old_embeddings_df.columns)
     embeddings_df.to_csv(general_path+'/esm2_embeddings_rbp'+data_suffix+'.csv', index=False)
     return
 
@@ -114,7 +114,7 @@ def compute_esm2_embeddings_loci(general_path, data_suffix='', add=False):
     # save results
     embeddings_df = pd.concat([pd.DataFrame({'accession':list(loci_dict.keys())}), pd.DataFrame(loci_representations)], axis=1)
     if add == True:
-        embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
+        embeddings_df = pd.DataFrame(np.vstack([old_embeddings_df, embeddings_df]), columns=old_embeddings_df.columns)
     embeddings_df.to_csv(general_path+'/esm2_embeddings_loci'+data_suffix+'.csv', index=False)
 
 
@@ -135,6 +135,7 @@ def compute_hdc_embedding(path, suffix, locibase_path, rbpbase_path, mode='train
     command = 'julia compute_hdc_rep.jl ' + path + ' ' + suffix + ' ' + locibase_path + ' ' + rbpbase_path + ' ' + mode
     ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     ssout, sserr = ssprocess.communicate()
+    print(ssout)
     return
 
 

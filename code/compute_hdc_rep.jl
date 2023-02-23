@@ -11,7 +11,7 @@ using DataFrames
 using DelimitedFiles
 using HyperdimensionalComputing
 
-function hd_vectorization(sequence, tokens; layers=2, k=(6, 6))
+function hd_vectorization(sequence, tokens; layers=3, k=(6,6,6))
     """
     Convolutional sequence vectorization with hyperdimensional vectors.
     
@@ -74,7 +74,7 @@ function compute_hdc_rep(args)
     loci_embeddings = Array{BipolarHDV}(undef, length(LociBase))
     for (i, (name, proteins)) in enumerate(LociBase)
         # bind within one sequence, then aggregate the different sequences
-        protein_hdvs = [hd_vectorization(string(sequence), tokens, layers=2, k=(6,6)) for sequence in proteins]
+        protein_hdvs = [hd_vectorization(string(sequence), tokens, layers=3, k=(6,6,6)) for sequence in proteins]
         loci_hdv = HyperdimensionalComputing.aggregate(protein_hdvs)
         loci_embeddings[i] = loci_hdv
     end
@@ -84,7 +84,7 @@ function compute_hdc_rep(args)
     rbp_embeddings = Array{BipolarHDV}(undef, length(unique(RBPbase.phage_ID)))
     for (i, phageid) in enumerate(unique(RBPbase.phage_ID))
         subset = filter(row -> row.phage_ID == phageid, RBPbase)
-        protein_hdvs = [hd_vectorization(string(sequence), tokens, layers=2, k=(6,6)) for sequence in subset.protein_sequence]
+        protein_hdvs = [hd_vectorization(string(sequence), tokens, layers=3, k=(6,6,6)) for sequence in subset.protein_sequence]
         multirbp_hdv = HyperdimensionalComputing.aggregate(protein_hdvs)
         rbp_embeddings[i] = multirbp_hdv
     end
@@ -104,14 +104,14 @@ function compute_hdc_rep(args)
                     push!(features_bind, signature)
                     push!(groups_loci, i)
                     push!(groups_phage, j)
-                    push!(pairs, (accession, phage_id))
+                    push!(pairs, (accession, String(phage_id)))
                 end
             elseif mode == "test" # compute all signatures
                 signature = HyperdimensionalComputing.bind([loci_embeddings[i], rbp_embeddings[j]])
                 push!(features_bind, signature)
                 push!(groups_loci, i)
                 push!(groups_phage, j)
-                push!(pairs, (accession, phage_id))
+                push!(pairs, (accession, String(phage_id)))
             end
         end
     end

@@ -312,7 +312,7 @@ def phanotate_processing(general_path, phage_genomes_path, phanotate_path, data_
 #     embeddings = [embedder.reduce_per_protein(embedder.embed(sequence)) for sequence in tqdm(sequences)]
 #     embeddings_df = pd.concat([pd.DataFrame({'ID':names}), pd.DataFrame(embeddings)], axis=1)
 #     if add == True:
-#         embeddings_df = pd.concat([old_embeddings_df, embeddings_df], axis=0)
+#         embeddings_df = pd.DataFrame(np.vstack([old_embeddings_df, embeddings_df]), columns=old_embeddings_df.columns)
 #     embeddings_df.to_csv(general_path+'/phage_protein_embeddings'+data_suffix+'.csv', index=False)
 #     return
 
@@ -353,6 +353,7 @@ def phageRBPdetect(general_path, pfam_path, hmmer_path, xgb_path, gene_embedding
 
     # optionally press database first if not done already
     output, err = hmmpress_python(hmmer_path, pfam_path)
+    print(output)
 
     # get domains & scores
     phage_genes = genebase['gene_sequence']
