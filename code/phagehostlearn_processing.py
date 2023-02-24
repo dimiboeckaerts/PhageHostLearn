@@ -443,11 +443,10 @@ def process_bacterial_genomes(general_path, bact_genomes_path, database_path, da
         results = json.load(open(general_path+'/kaptive_results.json'))
         serotypes.append(results[0]['Best match']['Type'])
         for gene in results[0]['Locus genes']:
-            #try:
-            #    name = gene['Reference']['Product']
-            #except KeyError:
-            #    name = 'unknown'
-            protein = gene['Reference']['Protein sequence']
+            try:
+                protein = gene['tblastn result']['Protein sequence']
+            except KeyError:
+                protein = gene['Reference']['Protein sequence']
             if accessions[i] in list(loci_results.keys()):
                 loci_results[accessions[i]].append(protein[:-1])
             else:
