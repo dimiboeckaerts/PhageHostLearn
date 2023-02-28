@@ -445,6 +445,8 @@ def process_bacterial_genomes(general_path, bact_genomes_path, database_path, da
         for gene in results[0]['Locus genes']:
             try:
                 protein = gene['tblastn result']['Protein sequence']
+                protein = protein.replace('-', '')
+                protein = protein.replace('*', '')
             except KeyError:
                 protein = gene['Reference']['Protein sequence']
             if accessions[i] in list(loci_results.keys()):
