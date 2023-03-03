@@ -198,7 +198,7 @@ def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_
                 features_lan.append(pd.concat([loci_embeddings.iloc[i, 1:], multiRBP_embeddings.iloc[j, 1:]]))
                 
                 # hdc embeddings reorder
-                pair = (accession, phage_id)
+                pair = (str(accession), phage_id)
                 this_index = pairs.index(pair)
                 features_hdc.append(hdc_embeddings.iloc[this_index, 1:])
 
