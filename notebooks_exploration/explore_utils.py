@@ -18,8 +18,10 @@ from Bio import SeqIO
 from Bio import Entrez
 from tqdm import tqdm
 from Bio.Seq import Seq
+import matplotlib as mpl
 from Bio.SearchIO import HmmerIO
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatch
 from Bio.Blast import NCBIWWW, NCBIXML
 from plots2 import CircosPlot
 
@@ -298,6 +300,79 @@ def all_domains_scan(path, pfam_file, gene_sequences):
     bar.close()
     
     return domain_dict
+
+def RBPdetect_domains(path, pfam_file, sequences, identifiers, N_blocks=[], C_blocks=[], detect_others=True):
+    """
+    This function serves as the main function to do domain-based RBP detection based on
+    either a manually curated list of RBP-related Pfam domains or Pfam domains appended with 
+    custom HMMs. If custom HMMs are added, these HMMs must correspondingly be added in the Pfam
+    database that is scanned!
+
+    Inputs:
+    - path: path to HMM software for detection of the domains
+    - pfam_file: link to local Pfam database file (string)
+    - sequences: list of strings, DNA sequences
+    - identifiers: corresponding list of identifiers for the sequences (string)
+    - N_blocks: list of structural (N-terminal) domains as strings (corresponding to names in Pfam database)
+    - C_blocks: list of binding (C-terminal) domains as strings (corresponding to names in Pfam database)
+
+    Output:
+    - a dataframe of RBPs
+    """
+    bar = tqdm(total=len(sequences), leave=True, desc='Scanning the genes')
+    N_list = []; C_list = []
+    rangeN_list = []; rangeC_list = []
+    sequences_list = []; identifiers_list = []
+    for i, sequence in enumerate(sequences):
+        N_sequence = []
+        C_sequence = []
+        rangeN_sequence = []
+        rangeC_sequence = []
+        domains, scores, biases, ranges = gene_domain_scan(path, pfam_file, [sequence], threshold=18)
+        if len(domains) > 0:
+            for j, dom in enumerate(domains):
+                OM_score = math.floor(math.log(scores[j], 10)) # order of magnitude
+                OM_bias = math.floor(math.log(biases[j]+0.00001, 10))
+                
+                # N-terminal block
+                if (OM_score > OM_bias) and (dom in N_blocks):
+                    N_sequence.append(dom)
+                    rangeN_sequence.append(ranges[j])
+                
+                # C-terminal block
+                elif (OM_score > OM_bias) and (dom in C_blocks) and (scores[j] >= 25):
+                    C_sequence.append(dom)
+                    rangeC_sequence.append(ranges[j])
+                
+                # other block
+                elif (detect_others == True) and (OM_score > OM_bias) and (dom not in N_blocks) and (dom not in C_blocks):
+                    if ranges[j][1] <= 200:
+                        N_sequence.append('other')
+                        rangeN_sequence.append(ranges[j])
+                    elif (ranges[j][1] > 200) and (scores[j] >= 25):
+                        C_sequence.append('other')
+                        rangeC_sequence.append(ranges[j])
+                 
+            # add to the global list
+            if (len(N_sequence) > 0) or (len(C_sequence) > 0):
+                N_list.append(N_sequence)
+                C_list.append(C_sequence)
+                rangeN_list.append(rangeN_sequence)
+                rangeC_list.append(rangeC_sequence)
+                sequences_list.append(sequence)
+                identifiers_list.append(identifiers[i])
+
+        # update bar
+        bar.update(1)
+    bar.close()
+
+    # delete fasta
+    os.remove('protein_hits.fasta')
+
+    # make dataframe
+    detected_RBPs = pd.DataFrame({'identifier':identifiers_list, 'DNASeq':sequences_list, 'N_blocks':N_list, 'C_blocks':C_list, 
+                                'N_ranges':rangeN_list, 'C_ranges':rangeC_list})
+    return detected_RBPs
 
 
 def graph_dictionary(dict, save=False):
@@ -613,3 +688,127 @@ def clustalo_python(clustalo_path, input_file, output_file, out_format='fa'):
     stdout, stderr = process.communicate()
     
     return stdout, stderr
+
+def pairwise_alignment_julia(file_name, align_type, project_dir, n_threads='6'):
+    """
+    Input:
+    - file_name: string of path to the FASTA file to loop over
+    - align_type: type of alignment to execute ('DNA' or 'protein')
+    - project_dir: project directory with julia file in it
+    - n_threads: number of threads to use for multithreading (as string; default=6)
+    
+    Output:
+    - a score matrix of pairwise ID%, named file_name + '_score_matrix.txt'
+
+    Remark: first run the alias command once in therminal to enable julia from command line!
+    """
+    #alias_command = 'sudo ln -fs julia="/Applications/Julia-1.6.app/Contents/Resources/julia/bin/julia" /usr/local/bin/julia'
+    threads_command = 'export JULIA_NUM_THREADS=' + n_threads
+    cd_command = 'cd ' + project_dir
+    pw_command = 'julia pairwise_alignment.jl ' + file_name + ' ' + align_type
+    command = threads_command + '; ' + cd_command + '; ' + pw_command
+
+    ssprocess = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    ssout, sserr = ssprocess.communicate()
+    
+    return ssout, sserr
+
+def protein_architecture_plot(sequences, domains, locations, label_dict=[], count_threshold=0, save_fig=False):
+    """
+    Plots the different architectures (combinations of modules) for a given
+    set of proteins, domains and their locations.
+
+    Input:
+    - sequences: list of protein sequences to plot
+    - domains: list of lists with the domain names for each protein
+    - locations: list of lists of tuples with the location of each corresponding domain
+    - label_dict: optional dict with categories for labels {labelx: [domain1, ...], labely: [...], ...}
+    - count_threshold: threshold under which not to plot the domains, based on the number of occurrences
+    - save_fig: option to save the figure
+    """
+    # initiations
+    y_place = 0
+    protein_lengths = [round(len(x)) for x in sequences]
+    unique_combos = [list(x) for x in set(tuple(x) for x in domains)] # get unique combos
+    domain_counts = [domains.count(x) for x in unique_combos] # count unique combos
+    sorted_unique_combos = [(x,y) for y, x in sorted(zip(domain_counts, unique_combos))] # sort
+    sorted_unique_combos = [combo for combo in sorted_unique_combos if combo[1] > count_threshold] # delete under thres
+
+    # give all unique domains or labels a separate color
+    merged_domains = [dom for current_domains in sorted_unique_combos for dom in current_domains[0]]
+    unique_domains = list(set(merged_domains))
+    if len(label_dict) > 0:
+        for key in label_dict.keys():
+            new_domains = [value for value in label_dict[key] if value in unique_domains]
+            label_dict[key] = new_domains
+        cmap_names = ['Blues', 'Greens', 'Oranges', 'Purples', 'Reds']
+        colors_per_label = [plt.get_cmap(cmap_names[i])(np.linspace(0.8,0.4,len(label_dict[label]))) 
+                                                  for i, label in enumerate(list(label_dict.keys()))]
+        colors_dict = {}
+        for i, unique_label in enumerate(list(label_dict.keys())):
+            for j, domain in enumerate(label_dict[unique_label]):
+                colors_dict[domain] = colors_per_label[i][j]
+    else:
+        cmap = plt.cm.turbo(np.linspace(0.0, 1.0, len(unique_domains)))
+        colors_dict = dict([(dom, cmap[i]) for i, dom in enumerate(unique_domains)])
+
+    # set up plot and params
+    y_count = max(5, int(len(sorted_unique_combos)/4))
+    y_box = int(y_count*0.6)
+    x_count = min(200, max(protein_lengths))
+    x_legend = min(800, max(protein_lengths))
+    fig, ax = plt.subplots(figsize=(8,y_count))
+
+    # loop over unique combos and plot
+    protein_lengths = []
+    for i, current in enumerate(sorted_unique_combos):
+        current_domains = current[0]
+        current_count = current[1]
+        y_place += y_count
+        index = domains.index(current_domains)
+        current_protein = sequences[index]
+        current_locations = locations[index]
+        backbone_length = round(len(current_protein))
+        protein_lengths.append(backbone_length)
+
+        # plot backbone
+        backbone = plt.Rectangle((x_count, y_place), backbone_length, y_count*0.1, fc='grey')
+        ax.add_patch(backbone)
+        ax.annotate(str(current_count), xy=(1, y_place-(y_box/2)))
+
+        # loop over domains
+        for j, dom in enumerate(current_domains):
+            # plot each domain at correct location
+            loc = current_locations[j]
+
+            if len(label_dict) > 0:
+                current_label = [key for key, value in label_dict.items() if (dom in value)][0]
+                current_color = colors_dict[dom]
+            else:
+                current_label = dom
+                current_color = colors_dict[dom]
+            patch = mpatch.FancyBboxPatch((x_count+loc[0], y_place-(y_box/2)), loc[1]-loc[0], y_box, 
+                boxstyle='Round, pad=0.2, rounding_size=0.8', fc=current_color, label=current_label)
+            ax.add_patch(patch)
+    ax.set_xlim(0, x_count+max(protein_lengths) +x_legend/4)
+
+    ax.set_ylim(0, y_place+max(10,y_count))
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    #ax.legend(by_label.values(), by_label.keys())
+    ax.axis('off')
+    #ax.set_title('Protein domain architectures', size=14)
+    for i, label in enumerate(list(label_dict.keys())):
+        cbar = fig.colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(),cmap=plt.get_cmap(cmap_names[i])), 
+                     ax=ax, fraction=0.03+0.0015*i, pad=0.02)
+        cbar.ax.set_ylabel(label, rotation=270, labelpad=-2.5)
+        cbar.ax.get_yaxis().set_ticks([])
+    #fig.tight_layout()
+
+    if save_fig:
+        fig.savefig('protein_architecture_plot.png', dpi=400)
+        fig.savefig('protein_architecture_plot_svg.svg', dpi=400)
+
+    #fig.show()
+
+    return sorted_unique_combos
