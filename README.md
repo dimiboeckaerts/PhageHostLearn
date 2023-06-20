@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/345181329.svg)](https://zenodo.org/badge/latestdoi/345181329)
+
 # PhageHostLearn
 Pairwise machine learning models for phage-host interaction prediction
 
@@ -8,3 +10,5 @@ This is the repository related to our manuscript in submission at Nature Microbi
 
 ## Getting started
 To get started using the PhageHostLearn system, go to the `code` folder and read through the information in the notebooks `phagehostlearn_training` or `phagehostlearn_inference`.
+
+Processed data are available at [this Zenodo repository](https://doi.org/10.5281/zenodo.8052911).
