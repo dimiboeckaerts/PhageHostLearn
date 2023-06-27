@@ -139,10 +139,10 @@ def compute_hdc_embedding(path, suffix, locibase_path, rbpbase_path, mode='train
     return
 
 
-def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_path, hdcembeddings_path, mode='train'):
+def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_path, mode='train'):
     """
     This function constructs two corresponding feature matrices ready for machine learning, 
-    starting from the ESM-2 embeddings & the HDC embeddings of RBPs and loci proteins.
+    starting from the ESM-2 embeddings of RBPs and loci proteins.
 
     INPUTS:
     - path: general or test path depending on the mode
@@ -150,12 +150,10 @@ def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_
     - lociembeddings path to the loci embeddings csv file
     - rbpembeddings path to the rbp embeddings csv file
     - mode: 'train' or 'test', test mode doesn't use an IM (default='train')
-    OUTPUT: features_esm2, features_hdc, labels, groups_loci, groups_phage
+    OUTPUT: features_esm2, labels, groups_loci, groups_phage
     """
     RBP_embeddings = pd.read_csv(rbpembeddings_path)
     loci_embeddings = pd.read_csv(lociembeddings_path)
-    hdc_embeddings = pd.read_csv(hdcembeddings_path, sep="\t", header=None)
-    pairs = [ast.literal_eval(i) for i in hdc_embeddings.iloc[:,0]]
     if mode == 'train':
         interactions = pd.read_csv(path+'/phage_host_interactions'+suffix+'.csv', index_col=0)
 
@@ -171,7 +169,6 @@ def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_
 
     # construct dataframe for training
     features_lan = []
-    features_hdc = []
     labels = []
     groups_loci = []
     groups_phage = []
@@ -184,11 +181,6 @@ def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_
                     # language embeddings
                     features_lan.append(pd.concat([loci_embeddings.iloc[i, 1:], multiRBP_embeddings.iloc[j, 1:]]))
 
-                    # hdc embeddings reorder
-                    pair = (accession, phage_id)
-                    this_index = pairs.index(pair)
-                    features_hdc.append(hdc_embeddings.iloc[this_index, 1:])
-
                     # append labels and groups
                     labels.append(int(interaction))
                     groups_loci.append(i)
@@ -197,23 +189,16 @@ def construct_feature_matrices(path, suffix, lociembeddings_path, rbpembeddings_
                 # language embeddings
                 features_lan.append(pd.concat([loci_embeddings.iloc[i, 1:], multiRBP_embeddings.iloc[j, 1:]]))
                 
-                # hdc embeddings reorder
-                pair = (str(accession), phage_id)
-                this_index = pairs.index(pair)
-                features_hdc.append(hdc_embeddings.iloc[this_index, 1:])
-
                 # append groups
                 groups_loci.append(i)
                 groups_phage.append(j)
 
                 
     features_lan = np.asarray(features_lan)
-    features_hdc = np.asarray(features_hdc)
     print("Dimensions match?", features_lan.shape[1] == (loci_embeddings.shape[1]+multiRBP_embeddings.shape[1]-2))
-    print("Dimensions match?", features_lan.shape[0] == features_hdc.shape[0])
 
     #np.save(general_path+'/esm2_features'+data_suffix+'.txt', features_lan)
     if mode == 'train':
-        return features_lan, features_hdc, labels, groups_loci, groups_phage
+        return features_lan, labels, groups_loci, groups_phage
     elif mode == 'test':
-        return features_lan, features_hdc, groups_loci
+        return features_lan, groups_loci
