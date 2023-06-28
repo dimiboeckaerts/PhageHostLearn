@@ -1,9 +1,6 @@
 [![DOI](https://zenodo.org/badge/345181329.svg)](https://zenodo.org/badge/latestdoi/345181329)
 
 # PhageHostLearn
-Pairwise machine learning models for phage-host interaction prediction
-
-## General information
 
 This is the repository related to our manuscript in submission at Nature Microbiology:
 "PhageHostLearn: actionable prediction of Klebsiella phage-host specificity at the subspecies level", authored by Boeckaerts D, Stock M, Ferriol-González C, Jesús O-I, Sanjuan R, Domingo-Calap P, De Baets B and Briers Y.
