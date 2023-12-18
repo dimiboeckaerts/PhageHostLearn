@@ -14,8 +14,8 @@ This is the repository related to our manuscript in submission at Nature Microbi
 ## Quick start
 1. All the code to run the PhageHostLearn system is available in the `code` folder and presented as easy-to-follow IPython notebooks.
 2. If you want to train a PhageHostLearn model from scratch using your own phage genome and bacterial genome data, go to the `phagehostlearn_training` notebook in the `code` folder and follow each steps from the beginning.
-3. If you want to reproduce our analyses, first download the processed data from [this Zenodo repository](https://doi.org/10.5281/zenodo.8052911) and then follow the steps in the `phagehostlearn_training` notebook in the `code` folder (you will be able to skip step 2).
-4. If you want to run the PhageHostLearn system we trained on our _Klebsiella_ interaction data to predict new interactions for _Klebsiella_ phage-host pairs, go to the `phagehostlearn_inference` notebook in the `code` folder and follow the steps.
+3. If you want to reproduce our analyses, first download the processed data from [this Zenodo repository](https://doi.org/10.5281/zenodo.8095914) and then follow the steps in the `phagehostlearn_training` notebook in the `code` folder (you will be able to skip step 2).
+4. If you want to run the PhageHostLearn system we trained on our _Klebsiella_ interaction data to predict new interactions for _Klebsiella_ phage-host pairs, go to the `phagehostlearn_inference` notebook in the `code` folder and follow the steps. If you want to demo inference on the Klebsiella and phage genomes in our study, [the Zenodo repository](https://doi.org/10.5281/zenodo.8095914) also provides these as .zip files.
 
 For typical datasets (up to hundreds of phages and/or hundreds of bacteria), no specialized GPU hardware is strictly needed (although it can speed things up). For comparison, our dataset of around 100 phages and 200 bacteria took 5-6 hours to process and make predictions for on an 8-core Apple M1.
 
