@@ -2,8 +2,8 @@
 
 # PhageHostLearn
 
-This is the repository related to our manuscript in submission at Nature Microbiology:
-"PhageHostLearn: actionable prediction of Klebsiella phage-host specificity at the subspecies level", authored by Boeckaerts D, Stock M, Ferriol-González C, Jesús O-I, Sanjuan R, Domingo-Calap P, De Baets B and Briers Y.
+This is the repository related to our manuscript in submission at Nature Communications:
+"PhageHostLearn: actionable prediction of Klebsiella phage-host specificity at the strain level", authored by Boeckaerts D, Stock M, Ferriol-González C, Jesús O-I, Sanjuan R, Domingo-Calap P, De Baets B and Briers Y.
 
 ## Overview of the repository
 - `code`: all the final code for the PhageHostLearn system, allowing researchers to train models, reproduce our analyses or make new predictions (see Quick start)
