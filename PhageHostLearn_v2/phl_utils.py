@@ -1,5 +1,6 @@
 """
 PhageHostLearn - utils
+
 @author: dimiboeckaerts
 @date: 2024-01-31
 """
@@ -113,6 +114,19 @@ def phagerbpdetect(path, suffix=''):
     detected_rbps.to_csv(path+'/rbps'+suffix+'.csv', index=False)
     return
 
+def process_phages(files, path, phanotate_path, suffix=''):
+    """
+    Process the phage genomes with Phanotate and PhageRBPdetect v3.
+    Outputs: phage_genes.csv, rbps.csv
+    """
+    # collect the files
+    files = [file for file in os.listdir(path+'/phage_genomes') if (file.endswith('.fasta')) or (file.endswith('.fna'))]
+    # run Phanotate
+    phanotate_py(files, path, phanotate_path, suffix)
+    # run PhageRBPdetect v3
+    phagerbpdetect(path, suffix)
+    return
+
 def kaptive_py(files, path, kaptive_path, suffix=''):
     """
     Computes Kaptive for each FASTA in fastas list (of strings).
@@ -177,6 +191,17 @@ def kaptive_py(files, path, kaptive_path, suffix=''):
     loci_df.to_csv(path+'/loci_summary'+suffix+'.csv', index=False)
     return
 
+def process_bacteria(files, path, kaptive_path, suffix=''):
+    """
+    Process the bacterial genomes with Kaptive.
+    Outputs: locis.csv, loci_summary.csv
+    """
+    # collect the files
+    files = [file for file in os.listdir(path+'/bacterial_genomes') if (file.endswith('.fasta')) or (file.endswith('.fna'))]
+    # run Kaptive
+    kaptive_py(files, path, kaptive_path, suffix)
+    return
+
 def compute_representations(file, path, suffix=''):
     """
     This function computes ESM-2 embeddings for the proteins in a given file, 
@@ -191,7 +216,11 @@ def compute_representations(file, path, suffix=''):
     # load the ESM2 model
     model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
     batch_converter = alphabet.get_batch_converter()
-    model.eval()  # disables dropout for deterministic results
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device == 'cuda':
+        model.eval().cuda()
+    else:
+        model.eval()
 
     # loop over data and embed (batch size = 1)
     proteins = pd.read_csv(path+'/'+file)
@@ -215,35 +244,85 @@ def compute_representations(file, path, suffix=''):
     embeddings_df.to_csv(path+'/representations'+suffix+'.csv', index=False)
     return
 
-# --------------------------------------------------
+def combine_representations(file, path, suffix='', mode='mean'):
+    """
+    This function combines the computed ESM-2 embeddings for the proteins in a given file,
+    according to their accessions, and averages the embeddings for each accession.
 
-def process_phages(files, path, phanotate_path, suffix=''):
-    """
-    Process the phage genomes with Phanotate and PhageRBPdetect v3.
-    Outputs: phage_genes.csv, rbps.csv
-    """
-    # collect the files
-    files = [file for file in os.listdir(path+'/phage_genomes') if (file.endswith('.fasta')) or (file.endswith('.fna'))]
-    # run Phanotate
-    phanotate_py(files, path, phanotate_path, suffix)
-    # run PhageRBPdetect v3
-    phagerbpdetect(path, suffix)
-    return
+    TO DO: implement min-max mode
 
-def process_bacteria(files, path, kaptive_path, suffix=''):
+    INPUTS:
+    - file: path to the represenations.csv file with columns: accession, protein_ID and the embeddings
+    - path: path to the general data folder
+    - data suffix to optionally add to the saved file name (default='')
+    OUTPUT: multi_representations.csv
     """
-    Process the bacterial genomes with Kaptive.
-    Outputs: locis.csv, loci_summary.csv
-    """
-    # collect the files
-    files = [file for file in os.listdir(path+'/bacterial_genomes') if (file.endswith('.fasta')) or (file.endswith('.fna'))]
-    # run Kaptive
-    kaptive_py(files, path, kaptive_path, suffix)
-    return
+    reps = pd.read_csv(path+'/'+file)
+    bar = tqdm(total=len(reps['protein_ID']), position=0, leave=True)
+    average_representations = []
+    # loop over the unique accessions
+    for acc in list(set(reps['accession'])):
+        # get the subset of reps for each accession
+        acc_reps = reps.iloc[:,2:][reps['accession'] == acc]
+        if mode == 'mean':
+            #  average the reps
+            average_representations.append(np.mean(np.asarray(acc_reps), axis=0))
+        bar.update(1)
+    multirep = pd.concat([pd.DataFrame({'accession': list(set(reps['accession']))}), pd.DataFrame(average_representations)], axis=1)
+    multirep.to_csv(path+'/multi_representations'+suffix+'.csv', index=False)
 
-def construct_trainingframe(rbp_file, loci_file, path, suffix=''):
+def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=False):
     """
-    """
-    # compute feature representations (compute for all proteins)
+    This function constructs the input dataframe for the machine learning model.
 
-    # construct the training dataframe (here make averages)
+    INPUTS:
+    - rbp_multirep: path to the multi_representations.csv file for the RBPs
+    - loci_multirep: path to the multi_representations.csv file for the loci
+    - path: path to the general data folder
+    - data suffix to optionally add to the saved file name (default='')
+    - interactions: optional path to the interactions.csv file if in training mode
+
+    OUTPUTS: features, labels
+    """
+    features = []
+    phagerep = pd.read_csv(path+'/'+rbp_multirep)
+    hostrep = pd.read_csv(path+'/'+loci_multirep)
+    if interactions != False:
+        labels = []
+        interactions = pd.read_csv(path+'/'+interactions)
+        for i, host in enumerate(interactions['host']):
+            phage = interactions['phage'][i]
+            this_phagerep = np.asarray(phagerep.iloc[:, 1:][phagerep['accession'] == phage])
+            this_hostrep = np.asarray(hostrep.iloc[:, 1:][hostrep['accession'] == host])
+            features.append(np.concatenate([this_hostrep, this_phagerep], axis=1)) # first host rep, then phage rep!
+            labels.append(interactions['interaction'][i])
+    else:
+        for i, host in enumerate(hostrep['accession']):
+            for j, phage in enumerate(phagerep['accession']):
+                features.append(pd.concat([hostrep.iloc[i, 1:], phagerep.iloc[j, 1:]], axis=1))
+
+    features = np.vstack(features)
+    return features, labels
+
+
+### TEST
+phagerep = pd.DataFrame({'accession': range(1, 6), 'c1': np.random.randint(0, 11, size=5), 
+                   'c2': np.random.randint(0, 11, size=5),'c3': np.random.randint(0, 11, size=5),
+                   'c4': np.random.randint(0, 11, size=5),'c5': np.random.randint(0, 11, size=5)})
+
+hostrep = pd.DataFrame({'accession': ['b1', 'b2', 'b3'], 'c1': np.random.randint(0, 11, size=3), 
+                   'c2': np.random.randint(0, 11, size=3),'c3': np.random.randint(0, 11, size=3),
+                   'c4': np.random.randint(0, 11, size=3),'c5': np.random.randint(0, 11, size=3)})
+
+ints = pd.DataFrame({'host': ['b1', 'b2', 'b2', 'b3'], 'phage': [1, 2, 4, 3], 'interaction': [1, 1, 0, 1]})
+ 
+features = []
+labels = []
+for i, host in enumerate(ints['host']):
+    phage = ints['phage'][i]
+    this_phagerep = np.asarray(phagerep.iloc[:, 1:][phagerep['accession'] == phage])
+    this_hostrep = np.asarray(hostrep.iloc[:, 1:][hostrep['accession'] == host])
+    features.append(np.concatenate([this_hostrep, this_phagerep], axis=1))
+    labels.append(ints['interaction'][i])
+features = np.vstack(features)
+print('done')
