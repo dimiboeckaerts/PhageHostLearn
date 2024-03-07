@@ -17,8 +17,8 @@ import numpy as np
 from Bio import SeqIO
 from Bio.Seq import Seq
 from tqdm import tqdm
+from xgboost import XGBClassifier
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import numpy as np
 
 # 1 - FUNCTIONS
 # --------------------------------------------------
@@ -227,8 +227,10 @@ def compute_representations(file, path, suffix=''):
     bar = tqdm(total=len(proteins['protein_sequence']), position=0, leave=True)
     sequence_representations = []
     for i, sequence in enumerate(proteins['protein_sequence']):
-        data = [(proteins['protein_ID'][i], sequence)]
+        data = [(proteins['protein_ID'][i], sequence[:2500])]
         batch_labels, batch_strs, batch_tokens = batch_converter(data)
+        if device == 'cuda':
+            batch_tokens = batch_tokens.to(device=device, non_blocking=True)
         with torch.no_grad():
             results = model(batch_tokens, repr_layers=[33], return_contacts=True)
         token_representations = results["representations"][33]
@@ -258,20 +260,18 @@ def combine_representations(file, path, suffix='', mode='mean'):
     OUTPUT: multi_representations.csv
     """
     reps = pd.read_csv(path+'/'+file)
-    bar = tqdm(total=len(reps['protein_ID']), position=0, leave=True)
     average_representations = []
     # loop over the unique accessions
-    for acc in list(set(reps['accession'])):
+    for acc in tqdm(list(set(reps['accession']))):
         # get the subset of reps for each accession
         acc_reps = reps.iloc[:,2:][reps['accession'] == acc]
         if mode == 'mean':
             #  average the reps
             average_representations.append(np.mean(np.asarray(acc_reps), axis=0))
-        bar.update(1)
     multirep = pd.concat([pd.DataFrame({'accession': list(set(reps['accession']))}), pd.DataFrame(average_representations)], axis=1)
     multirep.to_csv(path+'/multi_representations'+suffix+'.csv', index=False)
 
-def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=False):
+def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=None):
     """
     This function constructs the input dataframe for the machine learning model.
 
@@ -280,49 +280,91 @@ def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=False):
     - loci_multirep: path to the multi_representations.csv file for the loci
     - path: path to the general data folder
     - data suffix to optionally add to the saved file name (default='')
-    - interactions: optional path to the interactions.csv file if in training mode
+    - interactions: optional interactions dataframe if in training mode (columns: host, phage, interaction)
 
     OUTPUTS: features, labels
     """
     features = []
     phagerep = pd.read_csv(path+'/'+rbp_multirep)
     hostrep = pd.read_csv(path+'/'+loci_multirep)
-    if interactions != False:
-        labels = []
-        interactions = pd.read_csv(path+'/'+interactions)
+    if interactions is not None:
+        bar = tqdm(total=len(interactions['host']), position=0)
         for i, host in enumerate(interactions['host']):
             phage = interactions['phage'][i]
             this_phagerep = np.asarray(phagerep.iloc[:, 1:][phagerep['accession'] == phage])
             this_hostrep = np.asarray(hostrep.iloc[:, 1:][hostrep['accession'] == host])
             features.append(np.concatenate([this_hostrep, this_phagerep], axis=1)) # first host rep, then phage rep!
-            labels.append(interactions['interaction'][i])
+            bar.update(1)
+        bar.close()
     else:
+        host_acc = []
+        phage_acc = []
+        bar = tqdm(total=len(hostrep['accession']), position=0)
         for i, host in enumerate(hostrep['accession']):
             for j, phage in enumerate(phagerep['accession']):
                 features.append(pd.concat([hostrep.iloc[i, 1:], phagerep.iloc[j, 1:]], axis=1))
-
+                host_acc.append(host)
+                phage_acc.append(phage)
+            bar.update(1)
+        bar.close()
+        interactions = pd.DataFrame({'host': host_acc, 'phage': phage_acc})
     features = np.vstack(features)
-    return features, labels
+    return features, interactions
+
+def predict_interactions(features, interactions, model_file, path, suffix='', mode='scores'):
+    """
+    This function make predictions for the input data using the trained PhageHostLearn model.
+    As an output, it both returns the interactions dataframe with the predictions, and saves it to a csv file.
+    If mode is 'ranking', the interactions are sorted by prediction score.
+
+    INPUTS:
+    - features: the input features for the model (output of construct_inputframe)
+    - interactions: the interactions dataframe (output of construct_inputframe)
+    - model_file: the name of the trained model file
+    - path: path to the general data folder
+    - data suffix to optionally add to the saved file name (default='')
+    - mode: 'scores' or 'ranking' (default='scores').
+    OUTPUTS: (ranked) interactions with predictions
+    """
+    # load the model
+    xgb = XGBClassifier()
+    xgb.load_model(path+'/'+model_file)
+
+    # make predictions
+    scores_xgb = xgb.predict_proba(features)[:,1]
+    if mode == 'scores':
+        interactions['prediction_score'] = scores_xgb
+        interactions.to_csv(path+'/predictions'+suffix+'.csv', index=False)
+        return interactions
+    elif mode == 'ranking':
+        interactions['prediction_score'] = scores_xgb
+        interactions = interactions.sort_values(by='prediction_score', ascending=False)
+        interactions.to_csv(path+'/predictions'+suffix+'.csv', index=False)
+        return interactions
+
+def evaluate_model(predictions, path, suffix=''):
+    """
+    """
+    return
+
+def train_model(features, labels, path, suffix='', checkpoint=None):
+    """
+    - checkpoint: an optional path to trained model to continue training from (e.g. active learning setting)
+    """
+    cpus = max(os.cpu_count()-2, 1)
+    imbalance = sum([1 for i in labels if i==1]) / sum([1 for i in labels if i==0])
+    if checkpoint is not None:
+        xgb = XGBClassifier()
+        xgb.fit(X=features, y=labels, xgb_model=path+'/'+checkpoint)
+        xgb.save_model(path+'/phagehostlearn_newcheckpoint.json')
+    else:
+        xgb = XGBClassifier(scale_pos_weight=1/imbalance, learning_rate=0.3, n_estimators=250, max_depth=7,
+                            n_jobs=cpus, eval_metric='logloss', use_label_encoder=False)
+        xgb.fit(X=features, y=labels)
+        xgb.save_model(path+'/phagehostlearn_newcheckpoint.json')
 
 
-### TEST
-phagerep = pd.DataFrame({'accession': range(1, 6), 'c1': np.random.randint(0, 11, size=5), 
-                   'c2': np.random.randint(0, 11, size=5),'c3': np.random.randint(0, 11, size=5),
-                   'c4': np.random.randint(0, 11, size=5),'c5': np.random.randint(0, 11, size=5)})
+    return
+        
 
-hostrep = pd.DataFrame({'accession': ['b1', 'b2', 'b3'], 'c1': np.random.randint(0, 11, size=3), 
-                   'c2': np.random.randint(0, 11, size=3),'c3': np.random.randint(0, 11, size=3),
-                   'c4': np.random.randint(0, 11, size=3),'c5': np.random.randint(0, 11, size=3)})
 
-ints = pd.DataFrame({'host': ['b1', 'b2', 'b2', 'b3'], 'phage': [1, 2, 4, 3], 'interaction': [1, 1, 0, 1]})
- 
-features = []
-labels = []
-for i, host in enumerate(ints['host']):
-    phage = ints['phage'][i]
-    this_phagerep = np.asarray(phagerep.iloc[:, 1:][phagerep['accession'] == phage])
-    this_hostrep = np.asarray(hostrep.iloc[:, 1:][hostrep['accession'] == host])
-    features.append(np.concatenate([this_hostrep, this_phagerep], axis=1))
-    labels.append(ints['interaction'][i])
-features = np.vstack(features)
-print('done')
