@@ -7,9 +7,7 @@ This is the repository related to our manuscript in submission at Nature Communi
 
 ## Overview of the repository
 - `code`: all the final code for the PhageHostLearn system, allowing researchers to train models, reproduce our analyses or make new predictions (see Quick start)
-- `notebooks_exploration`: various exploratory analyses, for informative purposes
-- `notebooks_models`: previous iterations of the PhageHostLearn system, for informative purposes.
-- `notebooks_processing`: separate old notebooks for processing genome data, for informative purposes.
+- `analysis_notebooks`: folder including various subfolders related to certain analyses of the work, for informative purposes; _notebooks_exploration_ (various exploratory analyses), _notebooks_models_ (previous iterations of the PhageHostLearn system) and _notebooks_processing_ (separate old notebooks for processing genome data)
 
 ## Making predictions for your data
 1. Clone or download this repository on your local computer.
