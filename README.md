@@ -18,7 +18,7 @@ This is the repository related to our manuscript in submission at Nature Communi
 ## Training a model from scratch or reproducing our analyses
 1. Clone or download this repository on your local computer.
 2. Install all the necessary software to run PhageHostLearn, see below.
-3. If you want to reproduce our analyses, download the processed data from [this Zenodo repository](https://doi.org/10.5281/zenodo.8095914).
+3. If you want to reproduce our analyses, download the processed data from [this Zenodo repository](https://doi.org/10.5281/zenodo.11061100).
 3. Navigate to the `phagehostlearn_training.ipynb` notebook in the `code` folder.
 4. Follow the steps in the notebook to process your own data and train a model or reproduce our analyses.
 
