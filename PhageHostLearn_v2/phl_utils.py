@@ -11,14 +11,18 @@ import os
 import esm
 import json
 import torch
+import pickle
 import subprocess
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from Bio import SeqIO
 from Bio.Seq import Seq
 from tqdm import tqdm
 from xgboost import XGBClassifier
+from sklearn.metrics import roc_curve, auc, precision_recall_curve
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, GroupKFold
 
 # 1 - FUNCTIONS
 # --------------------------------------------------
@@ -75,7 +79,7 @@ def phanotate_py(files, path, phanotate_path, suffix=''):
     genebase.to_csv(path+'/phage_genes'+suffix+'.csv', index=False)
     return
 
-def phagerbpdetect(path, suffix=''):
+def phagerbpdetect(path, model_path, suffix=''):
     """
     This function runs the RBPdetect v3 model on the phage proteins
     Inputs:
@@ -83,7 +87,6 @@ def phagerbpdetect(path, suffix=''):
     Output: rbps.csv 
     """
     # initiation the model
-    model_path = path+'/RBPdetect_v3_ESMfineT33'
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     #device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -114,7 +117,7 @@ def phagerbpdetect(path, suffix=''):
     detected_rbps.to_csv(path+'/rbps'+suffix+'.csv', index=False)
     return
 
-def process_phages(files, path, phanotate_path, suffix=''):
+def process_phages(path, phanotate_path, model_path, suffix=''):
     """
     Process the phage genomes with Phanotate and PhageRBPdetect v3.
     Outputs: phage_genes.csv, rbps.csv
@@ -124,10 +127,10 @@ def process_phages(files, path, phanotate_path, suffix=''):
     # run Phanotate
     phanotate_py(files, path, phanotate_path, suffix)
     # run PhageRBPdetect v3
-    phagerbpdetect(path, suffix)
+    phagerbpdetect(path, model_path, suffix)
     return
 
-def kaptive_py(files, path, kaptive_path, suffix=''):
+def kaptive_py(files, path, kaptive_path, db_path, suffix=''):
     """
     Computes Kaptive for each FASTA in fastas list (of strings).
     """
@@ -139,7 +142,6 @@ def kaptive_py(files, path, kaptive_path, suffix=''):
     for i, file in enumerate(files):
         # run kaptive
         file_path = path+'/bacterial_genomes/'+file
-        db_path = path+'/Klebsiella_k_locus_primary_reference.gbk'
         #mkcommand = 'mkdir '+path+'/kaptive_results'+data_suffix
         command = 'python '+kaptive_path+' -a '+file_path+' -k '+db_path+' -o '+path+'/results'+suffix+' --no_table'
         #command = mkcommand+'; '+kapcommand
@@ -162,12 +164,14 @@ def kaptive_py(files, path, kaptive_path, suffix=''):
                     protein = protein.replace('-', '')
                     protein = protein.replace('*', '')
                 accessions_list.append(accessions[i])
-                loci_names_list.append(accessions[i]+'_'+count)
+                loci_names_list.append(accessions[i]+'_'+str(count))
                 proteins_list.append(protein)
                 count += 1
         loci_sequence = ''
         for record in SeqIO.parse(path+'/results'+suffix+'_'+accessions[i]+'.fasta', 'fasta'):
             loci_sequence = loci_sequence + str(record.seq)
+        if len(loci_sequence) > 100000:
+            print('Warning: extremely long locus sequence, please check manually:', accessions[i])
         loci_list.append(loci_sequence)
         sero_list.append(serotype)
         confidence_list.append(match_confidence)
@@ -191,7 +195,7 @@ def kaptive_py(files, path, kaptive_path, suffix=''):
     loci_df.to_csv(path+'/loci_summary'+suffix+'.csv', index=False)
     return
 
-def process_bacteria(files, path, kaptive_path, suffix=''):
+def process_bacteria(path, kaptive_path, db_path, suffix=''):
     """
     Process the bacterial genomes with Kaptive.
     Outputs: locis.csv, loci_summary.csv
@@ -199,7 +203,7 @@ def process_bacteria(files, path, kaptive_path, suffix=''):
     # collect the files
     files = [file for file in os.listdir(path+'/bacterial_genomes') if (file.endswith('.fasta')) or (file.endswith('.fna'))]
     # run Kaptive
-    kaptive_py(files, path, kaptive_path, suffix)
+    kaptive_py(files, path, kaptive_path, db_path, suffix)
     return
 
 def compute_representations(file, path, suffix=''):
@@ -227,7 +231,7 @@ def compute_representations(file, path, suffix=''):
     bar = tqdm(total=len(proteins['protein_sequence']), position=0, leave=True)
     sequence_representations = []
     for i, sequence in enumerate(proteins['protein_sequence']):
-        data = [(proteins['protein_ID'][i], sequence[:2500])]
+        data = [(proteins['protein_ID'][i], sequence[:2000])]
         batch_labels, batch_strs, batch_tokens = batch_converter(data)
         if device == 'cuda':
             batch_tokens = batch_tokens.to(device=device, non_blocking=True)
@@ -290,7 +294,7 @@ def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=None):
     if interactions is not None:
         bar = tqdm(total=len(interactions['host']), position=0)
         for i, host in enumerate(interactions['host']):
-            phage = interactions['phage'][i]
+            phage = list(interactions['phage'])[i]
             this_phagerep = np.asarray(phagerep.iloc[:, 1:][phagerep['accession'] == phage])
             this_hostrep = np.asarray(hostrep.iloc[:, 1:][hostrep['accession'] == host])
             features.append(np.concatenate([this_hostrep, this_phagerep], axis=1)) # first host rep, then phage rep!
@@ -311,9 +315,162 @@ def construct_inputframe(rbp_multirep, loci_multirep, path, interactions=None):
     features = np.vstack(features)
     return features, interactions
 
+def train_model(features, interactions, path, suffix='', checkpoint=None):
+    """
+    This function trains a (XGBoost) PhageHostLearn model on the input features and labels.
+    It can either train from scratch or continue from a checkpoint. If training from scratch, hyperparameter tuning is performed.
+    Info: https://www.analyticsvidhya.com/blog/2016/03/complete-guide-parameter-tuning-xgboost-with-codes-python/#h-what-are-xgboost-parameters
+
+    INPUTS:
+    - features: the input features for the model (output of construct_inputframe)
+    - interactions: the dataframe of interactions, including labels for the model (output of construct_inputframe)
+    - path: path to the general data folder
+    - data suffix to optionally add to the saved file name (default='')
+    - checkpoint: an optional path to trained model to continue training from (e.g. active learning setting)
+    """
+    # general config
+    cpus = max(os.cpu_count()-2, 1)
+    labels = list(interactions['label'])
+    #imbalance = sum([1 for i in labels if i==1]) / sum([1 for i in labels if i==0])
+
+    # do training
+    if checkpoint is not None: # continue from checkpoint
+        print('Continuing training from checkpoint...')
+        xgb = XGBClassifier()
+        xgb.fit(X=features, y=labels, xgb_model=path+'/'+checkpoint)
+        xgb.save_model(path+'/phagehostlearn'+suffix+'.json')
+    else: # train from scratch, do hyperparameter tuning
+        print('Training from scratch...')
+        params_xgb = {'max_depth': [3, 5, 7], 'n_estimators': [200, 300, 400], 'min_child_weight': [1, 2, 3, 4],
+              'learning_rate': [0.05, 0.1, 0.2]}
+        cv = StratifiedKFold(n_splits=5, shuffle=True)
+        xgb = XGBClassifier(max_delta_step=4, n_jobs=cpus, eval_metric='logloss', use_label_encoder=False)
+        tuned_xgb = GridSearchCV(xgb, cv=cv, param_grid=params_xgb, scoring='roc_auc', verbose=3)
+        tuned_xgb.fit(X=features, y=labels)
+        best_xgb = tuned_xgb.best_estimator_
+        best_xgb.save_model(path+'/phagehostlearn'+suffix+'.json')
+        
+    print('Training completed. Model saved. Best hyperparameters: ', tuned_xgb.best_params_)
+    return
+
+def eval_model(features, interactions, groups, path, suffix='', noutcv=40):
+    """
+    This function trains a (XGBoost) PhageHostLearn model on the input features and labels
+    and evaluates that model on the same dataset using a nested cross-validation. This function
+    is to be used if one wants to train and eval on the same dataset in a correct way. The idea
+    is to loop over the datapoints in such a way that each point at least gets predicted for once.
+    This function does not save a final model, but saves prediction results. To save a model, use train_model.
+    Downside: it is computationally expensive.
+
+    INPUTS:
+    - features: the input features for the model (output of construct_inputframe)
+    - interactions: the dataframe of interactions, including labels for the model (output of construct_inputframe)
+    - groups: the groups for the LeaveOneGroupOut cross-validation
+    - path: path to save the results to
+    - data suffix to optionally add to the saved file name (default='')
+    """
+    # general config
+    cpus = max(os.cpu_count()-1, 1)
+    labels = np.array(interactions['label'])
+    inner_cv = StratifiedKFold(n_splits=3, shuffle=True)
+    outer_cv = GroupKFold(n_splits=noutcv) #LeaveOneGroupOut()
+    params_xgb = {'max_depth': [3, 5, 7], 'n_estimators': [200, 300, 400], 'min_child_weight': [2, 4],
+              'learning_rate': [0.05, 0.1, 0.2]}
+    scores = []; label_list = []; test_indices = []
+    interactions.reset_index(drop=True, inplace=True)
+
+    # outer loop
+    pbar = tqdm(total=len(set(groups)))
+    for train_i, test_i in outer_cv.split(features, labels, groups):
+        # get the training and test data
+        X_train, X_test = features[train_i], features[test_i]
+        y_train, y_test = labels[train_i], labels[test_i]
+        #imbalance = sum([1 for i in y_train if i==1]) / sum([1 for i in y_train if i==0])
+
+        # inner loop for hyperparameter tuning
+        xgb = XGBClassifier(max_delta_step=4, n_jobs=cpus, eval_metric='logloss', use_label_encoder=False)
+        tuned_xgb = GridSearchCV(xgb, cv=inner_cv, param_grid=params_xgb, scoring='roc_auc', verbose=3)
+        tuned_xgb.fit(X=X_train, y=y_train)
+        best_xgb = tuned_xgb.best_estimator_
+
+        # evaluate the model
+        scores_xgb = best_xgb.predict_proba(X_test)[:,1]
+        scores.append(scores_xgb)
+        label_list.append(y_test)
+        test_indices.append(test_i)
+        pbar.update(1)
+    pbar.close()
+
+    # save results
+    travel = list(np.concatenate(test_indices).ravel())
+    sravel = list(np.concatenate(scores).ravel())
+    sorted_scores = [s for _, s in sorted(zip(travel, sravel))]
+    results = pd.concat([interactions, pd.DataFrame({'prediction_score': sorted_scores})], axis=1)
+    results.to_csv(path+'/cvresults'+suffix+'.csv', index=False)
+    return
+
+def hitratio(queries, k):
+    """
+    Hit ratio for in the first k elements.
+    Queries is a sorted list of lists that groups the labels of all phages per host.
+    """
+    return sum([1 for query in queries if sum(query[:k]) > 0]) / len(queries)
+
+def eval_report(predictions, results_path, suffix=''):
+    """
+    Computes the hit ratio @ K curve, the ROC AUC and the PR AUC for the predictions.
+    """
+    labels = predictions['label']
+    scores = predictions['prediction_score']
+
+    # Hit ratio @ k
+    queries = []
+    for host in set(predictions['host']):
+        subpreds = predictions[predictions['host']==host]
+        if sum(subpreds['label']) > 0:
+            sublabels = subpreds['label']
+            subscores = subpreds['prediction_score']
+            sortpreds = [label for _, label in sorted(zip(subscores, sublabels), reverse=True)]
+            queries.append(sortpreds)
+    ks = np.linspace(1, 30, 30)
+    hits = [hitratio(queries, int(k)) for k in ks]
+
+    # ROC AUC
+    fpr, tpr, thrs = roc_curve(labels, scores)
+    rocauc = round(auc(fpr, tpr), 3)
+
+    # PR AUC
+    precision, recall, thrs = precision_recall_curve(labels, scores)
+    prauc = round(auc(recall, precision), 3)
+
+    # make plot
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24,8))
+    ax1.plot(fpr, tpr, c='#124559', linewidth=2.5)
+    ax1.set_xlabel('False positive rate', size=20)
+    ax1.set_ylabel('True positive rate', size=20)
+    ax1.grid(True, linestyle=':')
+    #ax1.yaxis.set_tick_params(labelsize = 14); ax1.xaxis.set_tick_params(labelsize = 14)
+    ax1.set_title('ROC curve (AUC = '+str(rocauc)+')', size=20)
+    # ---
+    ax2.plot(recall, precision, c='#124559', linewidth=2.5)
+    ax2.set_xlabel('Recall', size=20)
+    ax2.set_ylabel('Precision', size=20)
+    ax2.grid(True, linestyle=':')
+    #ax2.yaxis.set_tick_params(labelsize = 14); ax2.xaxis.set_tick_params(labelsize = 14)
+    ax2.set_title('PR curve (AUC = '+str(prauc)+')', size=20)
+    # ---
+    ax3.plot(ks, hits, c='#124559', linewidth=2.5)
+    ax3.set_xlabel('k', size=20)
+    ax3.set_ylabel('Hit ratio @ k', size=20)
+    ax3.grid(True, linestyle=':')
+    ax3.set_title('Hit ratio @ k', size=20)
+    ax3.set_ylim(0.05, 1.05)
+    fig.savefig(results_path+'/performance_curves'+suffix+'.pdf', dpi=500)
+    return
+
 def predict_interactions(features, interactions, model_file, path, suffix='', mode='scores'):
     """
-    This function make predictions for the input data using the trained PhageHostLearn model.
+    This function make predictions for the input data using a trained PhageHostLearn (XGBoost) model.
     As an output, it both returns the interactions dataframe with the predictions, and saves it to a csv file.
     If mode is 'ranking', the interactions are sorted by prediction score.
 
@@ -329,42 +486,18 @@ def predict_interactions(features, interactions, model_file, path, suffix='', mo
     # load the model
     xgb = XGBClassifier()
     xgb.load_model(path+'/'+model_file)
+    interactions.reset_index(drop=True, inplace=True)
 
     # make predictions
     scores_xgb = xgb.predict_proba(features)[:,1]
     if mode == 'scores':
-        interactions['prediction_score'] = scores_xgb
+        interactions = pd.concat([interactions, pd.DataFrame({'prediction_score': scores_xgb})], axis=1)
         interactions.to_csv(path+'/predictions'+suffix+'.csv', index=False)
         return interactions
     elif mode == 'ranking':
-        interactions['prediction_score'] = scores_xgb
+        interactions = pd.concat([interactions, pd.DataFrame({'prediction_score': scores_xgb})], axis=1)
         interactions = interactions.sort_values(by='prediction_score', ascending=False)
         interactions.to_csv(path+'/predictions'+suffix+'.csv', index=False)
         return interactions
-
-def evaluate_model(predictions, path, suffix=''):
-    """
-    """
-    return
-
-def train_model(features, labels, path, suffix='', checkpoint=None):
-    """
-    - checkpoint: an optional path to trained model to continue training from (e.g. active learning setting)
-    """
-    cpus = max(os.cpu_count()-2, 1)
-    imbalance = sum([1 for i in labels if i==1]) / sum([1 for i in labels if i==0])
-    if checkpoint is not None:
-        xgb = XGBClassifier()
-        xgb.fit(X=features, y=labels, xgb_model=path+'/'+checkpoint)
-        xgb.save_model(path+'/phagehostlearn_newcheckpoint.json')
-    else:
-        xgb = XGBClassifier(scale_pos_weight=1/imbalance, learning_rate=0.3, n_estimators=250, max_depth=7,
-                            n_jobs=cpus, eval_metric='logloss', use_label_encoder=False)
-        xgb.fit(X=features, y=labels)
-        xgb.save_model(path+'/phagehostlearn_newcheckpoint.json')
-
-
-    return
-        
 
 
